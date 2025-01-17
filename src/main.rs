@@ -1,4 +1,5 @@
 mod app;
+mod links;
 
 use app::{ui, ActivePane, App};
 use crossterm::{
@@ -13,6 +14,10 @@ use ratatui::{
 
 use std::io::{self, stdout};
 
+fn main_debug() {
+    App::new(None);
+}
+
 fn main() -> io::Result<()> {
     // Setup terminal
     enable_raw_mode()?;
@@ -20,7 +25,8 @@ fn main() -> io::Result<()> {
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
 
     // Create app state
-    let mut app = App::new();
+    let mut app = App::new(None);
+
     app.topics.state.select(Some(0));
     app.pages.state.select(Some(0));
 
@@ -56,21 +62,55 @@ fn main() -> io::Result<()> {
                         KeyCode::Tab | KeyCode::Char('l') => {
                             if app.active_pane == ActivePane::Topics {
                                 app.active_pane = ActivePane::Pages;
+                                app.pages.state.select(Some(0));
                             }
                         }
                         KeyCode::BackTab | KeyCode::Char('h') => {
                             if app.active_pane == ActivePane::Pages {
                                 app.active_pane = ActivePane::Topics;
+                                app.pages.state.select(None);
                             }
                         }
                         KeyCode::Down | KeyCode::Char('j') => match app.active_pane {
-                            ActivePane::Topics => app.topics.next(),
+                            ActivePane::Topics => {
+                                app.topics.next();
+                                if let Some(index) = app.topics.state.selected() {
+                                    let selected_topic = app.topics.items[index].clone();
+                                    app.reload(selected_topic);
+                                }
+                            }
                             ActivePane::Pages => app.pages.next(),
                         },
                         KeyCode::Up | KeyCode::Char('k') => match app.active_pane {
-                            ActivePane::Topics => app.topics.previous(),
+                            ActivePane::Topics => {
+                                app.topics.previous();
+                                if let Some(index) = app.topics.state.selected() {
+                                    let selected_topic = app.topics.items[index].clone();
+                                    app.reload(selected_topic);
+                                }
+                            }
                             ActivePane::Pages => app.pages.previous(),
                         },
+                        KeyCode::Char('r') => {
+                            if app.active_pane == ActivePane::Pages {
+                                if let Some(index) = app.topics.state.selected() {
+                                    let selected_topic = app.topics.items[index].clone();
+                                    app.reload(selected_topic);
+                                }
+                            } else if app.active_pane == ActivePane::Topics {
+                                app = App::new(None);
+                                app.topics.state.select(Some(0));
+                            }
+                        }
+                        KeyCode::Enter => {
+                            if app.active_pane == ActivePane::Pages {
+                                if let Some(index) = app.pages.state.selected() {
+                                    if let Some(url) = app.pages.items[index].source.clone() {
+                                        let _ = open::that(url); // Ignore potential error
+                                    }
+                                }
+                            }
+                        }
                         _ => {}
                     }
                 }

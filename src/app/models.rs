@@ -1,8 +1,12 @@
+use std::collections::HashSet;
+
 use ratatui::widgets::ListState;
+
+use crate::links::{Link, LinkService};
 
 pub struct App {
     pub topics: StatefulList<String>,
-    pub pages: StatefulList<String>,
+    pub pages: StatefulList<Link>,
     pub active_pane: ActivePane,
 }
 
@@ -55,28 +59,45 @@ impl<T> StatefulList<T> {
 }
 
 impl App {
-    pub fn new() -> App {
-        // Mock data
-        let topics = vec![
-            "Programming".to_string(),
-            "Science".to_string(),
-            "Technology".to_string(),
-            "Arts".to_string(),
-            "History".to_string(),
-        ];
+    pub fn new(selected_topic: Option<String>) -> App {
+        let svc = LinkService::new();
+        let links = svc
+            .load_from_directory("/Users/erik/files/Notes/Inbox")
+            .unwrap();
 
-        let pages = vec![
-            "Introduction to Rust Programming".to_string(),
-            "The Future of AI".to_string(),
-            "Web Development in 2025".to_string(),
-            "Modern Art Movements".to_string(),
-            "Ancient Civilizations".to_string(),
-        ];
+        let mut all_tags = HashSet::new();
+        let mut link_titles = Vec::new();
+        for link in links.clone() {
+            all_tags.extend(link.tags.clone());
+        }
+        let topics: Vec<String> = all_tags.into_iter().collect();
+
+        let selected_topic = selected_topic.or_else(|| topics.first().cloned());
+
+        if let Some(topic) = selected_topic {
+            link_titles = links
+                .into_iter()
+                .filter(|link| link.tags.contains(&topic))
+                .collect();
+        }
 
         App {
             topics: StatefulList::new(topics),
-            pages: StatefulList::new(pages),
+            pages: StatefulList::new(link_titles),
             active_pane: ActivePane::Topics,
         }
+    }
+
+    pub fn reload(&mut self, selected_topic: String) {
+        let svc = LinkService::new();
+        let links = svc
+            .load_from_directory("/Users/erik/files/Notes/Inbox")
+            .unwrap();
+
+        let link_titles = links
+            .into_iter()
+            .filter(|link| link.tags.contains(&selected_topic))
+            .collect();
+        self.pages = StatefulList::new(link_titles);
     }
 }
