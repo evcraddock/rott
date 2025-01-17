@@ -13,6 +13,7 @@ pub struct Link {
     pub description: Option<String>,
     pub tags: Vec<String>,
     pub content: Option<String>,
+    pub file_path: Option<String>,
 }
 
 fn default_title() -> String {
@@ -42,6 +43,7 @@ impl Link {
             description,
             tags,
             content: None,
+            file_path: None,
         }
     }
 
@@ -55,6 +57,7 @@ impl Link {
             description: None,
             tags: Vec::new(),
             content: None,
+            file_path: None,
         }
     }
 }
@@ -63,20 +66,6 @@ impl Link {
 pub struct LinkError {
     pub message: String,
 }
-
-// impl LinkError {
-//     fn new(message: &str) -> Self {
-//         LinkError {
-//             message: message.to_string(),
-//         }
-//     }
-//
-//     pub fn from_dyn_error(error: Box<dyn std::error::Error>) -> Self {
-//         LinkError {
-//             message: error.to_string(),
-//         }
-//     }
-// }
 
 impl std::error::Error for LinkError {}
 impl std::fmt::Display for LinkError {

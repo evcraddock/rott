@@ -11,6 +11,13 @@ impl LinkService {
         Self
     }
 
+    pub fn delete_link(&self, file_path: &str) -> Result<(), LinkError> {
+        match fs::remove_file(file_path) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(LinkError::from(e)),
+        }
+    }
+
     pub fn load_from_directory<P: AsRef<Path>>(
         &self,
         directory_path: P,
@@ -74,8 +81,10 @@ impl LinkService {
     }
 
     pub fn load_from_file<P: AsRef<Path>>(&self, file_path: P) -> Result<Link, LinkError> {
-        let content = fs::read_to_string(file_path)?;
-        self.frontmatter_to_link(&content)
+        let content = fs::read_to_string(&file_path)?;
+        let mut link = self.frontmatter_to_link(&content)?;
+        link.file_path = Some(file_path.as_ref().to_string_lossy().to_string());
+        Ok(link)
     }
 }
 

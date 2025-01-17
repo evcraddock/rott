@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 mod app;
 mod links;
 
@@ -26,9 +27,7 @@ fn main() -> io::Result<()> {
 
     // Create app state
     let mut app = App::new(None);
-
     app.topics.state.select(Some(0));
-    app.pages.state.select(Some(0));
 
     loop {
         terminal.draw(|frame| {
@@ -36,7 +35,6 @@ fn main() -> io::Result<()> {
 
             // Draw main UI
             ui(frame, &mut app);
-
             // Draw legend at bottom
             let legend = vec![
                 "q: Quit",
@@ -44,6 +42,8 @@ fn main() -> io::Result<()> {
                 "Shift+Tab/h: Left pane",
                 "↑/k: Move up",
                 "↓/j: Move down",
+                "Enter: Open link",
+                "Del: Remove link",
             ];
             let legend_text = Paragraph::new(legend.join(" | "))
                 .block(Block::default())
@@ -107,6 +107,17 @@ fn main() -> io::Result<()> {
                                 if let Some(index) = app.pages.state.selected() {
                                     if let Some(url) = app.pages.items[index].source.clone() {
                                         let _ = open::that(url); // Ignore potential error
+                                    }
+                                }
+                            }
+                        }
+                        KeyCode::Delete => {
+                            if app.active_pane == ActivePane::Pages {
+                                if let Some(index) = app.pages.state.selected() {
+                                    app.delete_link(&app.pages.items[index].clone());
+                                    if let Some(topic_index) = app.topics.state.selected() {
+                                        let selected_topic = app.topics.items[topic_index].clone();
+                                        app.reload(selected_topic);
                                     }
                                 }
                             }

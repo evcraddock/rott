@@ -70,7 +70,8 @@ impl App {
         for link in links.clone() {
             all_tags.extend(link.tags.clone());
         }
-        let topics: Vec<String> = all_tags.into_iter().collect();
+        let mut topics: Vec<String> = all_tags.into_iter().collect();
+        topics.sort();
 
         let selected_topic = selected_topic.or_else(|| topics.first().cloned());
 
@@ -99,5 +100,13 @@ impl App {
             .filter(|link| link.tags.contains(&selected_topic))
             .collect();
         self.pages = StatefulList::new(link_titles);
+    }
+
+    pub fn delete_link(&self, link: &Link) {
+        let svc = LinkService::new();
+        if let Some(file_path) = &link.file_path {
+            svc.delete_link(file_path.as_str())
+                .expect("could not delete file");
+        }
     }
 }
