@@ -44,7 +44,13 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
         .pages
         .items
         .iter()
-        .map(|page| ListItem::new(page.title.as_str()))
+        .map(|page| {
+            ListItem::new(format!(
+                "{}\n{}\n\n",
+                page.title,
+                page.source.as_deref().unwrap_or("")
+            ))
+        })
         .collect();
 
     let pages_block = Block::default()
@@ -55,9 +61,9 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
         } else {
             Style::default()
         });
-
     let pages_list = List::new(pages)
         .block(pages_block)
+        .style(Style::default())
         .highlight_style(Style::default().bg(Color::DarkGray));
 
     frame.render_stateful_widget(pages_list, chunks[1], &mut app.pages.state);
