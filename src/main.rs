@@ -118,6 +118,11 @@ fn main() -> io::Result<()> {
                                     if let Some(topic_index) = app.topics.state.selected() {
                                         let selected_topic = app.topics.items[topic_index].clone();
                                         app.reload(selected_topic);
+                                        app.pages.state.select(Some(if index == 0 {
+                                            0
+                                        } else {
+                                            index - 1
+                                        }));
                                     }
                                 }
                             }
