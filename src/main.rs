@@ -96,6 +96,10 @@ fn main() -> io::Result<()> {
                                 if let Some(index) = app.topics.state.selected() {
                                     let selected_topic = app.topics.items[index].clone();
                                     app.reload(selected_topic);
+                                } else if !app.topics.items.is_empty() {
+                                    app.topics.state.select(Some(0));
+                                    let selected_topic = app.topics.items[0].clone();
+                                    app.reload(selected_topic);
                                 }
                             } else if app.active_pane == ActivePane::Topics {
                                 app = App::new(None);
@@ -118,8 +122,9 @@ fn main() -> io::Result<()> {
                                     if let Some(topic_index) = app.topics.state.selected() {
                                         let selected_topic = app.topics.items[topic_index].clone();
                                         app.reload(selected_topic);
-                                        app.pages.state.select(Some(if index == 0 {
-                                            0
+                                        let total_items = app.pages.items.len() - 1;
+                                        app.pages.state.select(Some(if index <= total_items {
+                                            index
                                         } else {
                                             index - 1
                                         }));
