@@ -1,8 +1,11 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 
 use ratatui::widgets::ListState;
 
-use crate::links::{Link, LinkService};
+use crate::{
+    config::AppConfig,
+    links::{Link, LinkService},
+};
 
 pub struct App {
     pub topics: StatefulList<String>,
@@ -59,11 +62,9 @@ impl<T> StatefulList<T> {
 }
 
 impl App {
-    pub fn new(selected_topic: Option<String>) -> App {
+    pub fn new(selected_topic: Option<String>, config: &Arc<AppConfig>) -> App {
         let svc = LinkService::new();
-        let links = svc
-            .load_from_directory("/Users/erik/files/Notes/Inbox")
-            .unwrap();
+        let links = svc.load_from_directory(config.links_path.clone()).unwrap();
 
         let mut all_tags = HashSet::new();
         let mut link_titles = Vec::new();

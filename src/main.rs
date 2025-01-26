@@ -1,8 +1,10 @@
 #![allow(dead_code)]
 mod app;
+mod config;
 mod links;
 
 use app::{ui, ActivePane, App};
+use config::load_config;
 use crossterm::{
     event::{self, KeyCode, KeyEventKind},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -13,10 +15,14 @@ use ratatui::{
     widgets::{Block, Paragraph},
 };
 
-use std::io::{self, stdout};
+use std::{
+    io::{self, stdout},
+    sync::Arc,
+};
 
 fn main_debug() {
-    App::new(None);
+    let config = Arc::new(load_config().expect("could not load config"));
+    App::new(None, &config);
 }
 
 fn main() -> io::Result<()> {
@@ -24,9 +30,10 @@ fn main() -> io::Result<()> {
     enable_raw_mode()?;
     stdout().execute(EnterAlternateScreen)?;
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
+    let config = Arc::new(load_config().expect("could not load config"));
 
     // Create app state
-    let mut app = App::new(None);
+    let mut app = App::new(None, &config);
     app.topics.state.select(Some(0));
 
     loop {
@@ -102,7 +109,7 @@ fn main() -> io::Result<()> {
                                     app.reload(selected_topic);
                                 }
                             } else if app.active_pane == ActivePane::Topics {
-                                app = App::new(None);
+                                app = App::new(None, &config);
                                 app.topics.state.select(Some(0));
                             }
                         }
