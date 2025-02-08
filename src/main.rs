@@ -117,7 +117,9 @@ fn main() -> io::Result<()> {
                             if app.active_pane == ActivePane::Pages {
                                 if let Some(index) = app.pages.state.selected() {
                                     if let Some(url) = app.pages.items[index].source.clone() {
-                                        let _ = open::that(url); // Ignore potential error
+                                        let _ = std::process::Command::new("open_orion")
+                                            .arg(&url)
+                                            .spawn();
                                     }
                                 }
                             }
