@@ -92,13 +92,16 @@ impl App {
 
     pub fn reload(&mut self, selected_topic: String) {
         let svc = LinkService::new();
-        let links = svc
+        let mut links = svc
             .load_from_directory("/Users/erik/files/Notes/Inbox")
             .unwrap();
+
+        links.sort_by(|a, b| a.created.cmp(&b.created)); // Sort by oldest first
 
         let link_titles = links
             .into_iter()
             .filter(|link| link.tags.contains(&selected_topic))
+            .map(|link| link)
             .collect();
         self.pages = StatefulList::new(link_titles);
     }

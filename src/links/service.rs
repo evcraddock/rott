@@ -84,6 +84,23 @@ impl LinkService {
         let content = fs::read_to_string(&file_path)?;
         let mut link = self.frontmatter_to_link(&content)?;
         link.file_path = Some(file_path.as_ref().to_string_lossy().to_string());
+        
+        // Get file metadata and set created timestamp
+        if let Ok(metadata) = fs::metadata(&file_path) {
+            if let Ok(created) = metadata.created() {
+                if let Ok(datetime) = created.duration_since(std::time::UNIX_EPOCH) {
+                    let naive_datetime = {
+                        let secs = datetime.as_secs() as i64;
+                        let nsecs = datetime.subsec_nanos();
+                        chrono::DateTime::from_timestamp(secs, nsecs).map(|dt| dt.naive_utc())
+                    };
+                    if let Some(datetime) = naive_datetime {
+                        link.created = datetime.date();
+                    }
+                }
+            }
+        }
+        
         Ok(link)
     }
 }
