@@ -85,19 +85,17 @@ impl LinkService {
         let mut link = self.frontmatter_to_link(&content)?;
         link.file_path = Some(file_path.as_ref().to_string_lossy().to_string());
         
-        // Only set created timestamp from file metadata if not already set in frontmatter
-        if link.created == chrono::Local::now().naive_local().date() {
-            if let Ok(metadata) = fs::metadata(&file_path) {
-                if let Ok(created) = metadata.created() {
-                    if let Ok(datetime) = created.duration_since(std::time::UNIX_EPOCH) {
-                        let naive_datetime = {
-                            let secs = datetime.as_secs() as i64;
-                            let nsecs = datetime.subsec_nanos();
-                            chrono::DateTime::from_timestamp(secs, nsecs).map(|dt| dt.naive_utc())
-                        };
-                        if let Some(datetime) = naive_datetime {
-                            link.created = datetime.date();
-                        }
+        // Always use file creation date instead of frontmatter date
+        if let Ok(metadata) = fs::metadata(&file_path) {
+            if let Ok(created) = metadata.created() {
+                if let Ok(datetime) = created.duration_since(std::time::UNIX_EPOCH) {
+                    let naive_datetime = {
+                        let secs = datetime.as_secs() as i64;
+                        let nsecs = datetime.subsec_nanos();
+                        chrono::DateTime::from_timestamp(secs, nsecs).map(|dt| dt.naive_utc())
+                    };
+                    if let Some(datetime) = naive_datetime {
+                        link.created = datetime.date();
                     }
                 }
             }
@@ -234,9 +232,11 @@ Test content"#;
         assert_eq!(link.title, "Test Document");
         assert_eq!(link.source, Some("https://example.com".to_string()));
         assert_eq!(link.author, vec!["John Doe", "Jane Smith"]);
-        // The created date comes from the frontmatter in our test file
-        // The created date should match what's in the frontmatter
-        assert_eq!(link.created, NaiveDate::from_ymd_opt(2025, 1, 1).unwrap());
+        // The created date should come from the file creation time, not the frontmatter
+        // Since we can't predict the exact file creation time in tests, we'll just check
+        // that it's a valid date and not the default
+        assert!(link.created != NaiveDate::from_ymd_opt(2025, 1, 1).unwrap());
+        assert!(link.created <= chrono::Local::now().naive_local().date());
         assert_eq!(link.tags, vec!["test", "example"]);
     }
 
