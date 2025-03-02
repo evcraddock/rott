@@ -12,11 +12,14 @@ mod tests {
     use super::*;
     use std::env;
     use std::fs;
-    use std::path::PathBuf;
     use tempfile::tempdir;
 
     #[test]
     fn test_load_config_from_file() {
+        // Make sure no environment variables are set that could interfere
+        env::remove_var("APP_LINKS_PATH");
+        env::remove_var("APP_DEFAULT_TOPIC");
+        
         // Create a temporary directory for our test config
         let dir = tempdir().unwrap();
         let config_dir = dir.path().join(".config").join("rott");
@@ -51,6 +54,11 @@ default_topic: "test-topic"
 
     #[test]
     fn test_load_config_from_env() {
+        // Create a temporary directory for our test config to ensure no file config is loaded
+        let dir = tempdir().unwrap();
+        let original_home = env::var("HOME").ok();
+        env::set_var("HOME", dir.path().to_str().unwrap());
+        
         // Set environment variables
         env::set_var("APP_LINKS_PATH", "/env/test/path");
         env::set_var("APP_DEFAULT_TOPIC", "env-test-topic");
@@ -61,6 +69,11 @@ default_topic: "test-topic"
         // Clean up
         env::remove_var("APP_LINKS_PATH");
         env::remove_var("APP_DEFAULT_TOPIC");
+        if let Some(home) = original_home {
+            env::set_var("HOME", home);
+        } else {
+            env::remove_var("HOME");
+        }
         
         // Verify environment variables were used
         assert_eq!(config.links_path, "/env/test/path");
@@ -69,6 +82,10 @@ default_topic: "test-topic"
 
     #[test]
     fn test_config_env_overrides_file() {
+        // Make sure no previous environment variables are set
+        env::remove_var("APP_LINKS_PATH");
+        env::remove_var("APP_DEFAULT_TOPIC");
+        
         // Create a temporary directory for our test config
         let dir = tempdir().unwrap();
         let config_dir = dir.path().join(".config").join("rott");

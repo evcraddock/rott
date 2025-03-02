@@ -232,7 +232,7 @@ Test content"#;
         assert_eq!(link.title, "Test Document");
         assert_eq!(link.source, Some("https://example.com".to_string()));
         assert_eq!(link.author, vec!["John Doe", "Jane Smith"]);
-        // The created date comes from the frontmatter in our test
+        // The created date comes from the frontmatter in our test file
         assert_eq!(link.created, NaiveDate::from_ymd_opt(2025, 1, 1).unwrap());
         assert_eq!(link.tags, vec!["test", "example"]);
     }
