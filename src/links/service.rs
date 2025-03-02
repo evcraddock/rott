@@ -103,6 +103,16 @@ impl LinkService {
         
         Ok(link)
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDate;
+    use std::fs::File;
+    use std::io::Write;
+    use tempfile::tempdir;
+
     #[test]
     fn test_delete_link() {
         let dir = tempdir().unwrap();
@@ -193,15 +203,6 @@ Content"#;
         assert_eq!(link.title, "");
         assert!(link.file_path.is_some());
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use chrono::NaiveDate;
-    use std::fs::File;
-    use std::io::Write;
-    use tempfile::tempdir;
 
     #[test]
     fn test_load_markdown_file() {
