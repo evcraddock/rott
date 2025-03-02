@@ -1,9 +1,5 @@
-mod handlers;
 mod models;
-
-// pub use handlers::*;
 pub use models::*;
-
 use ratatui::{
     prelude::*,
     widgets::{Block, Borders, List, ListItem},
