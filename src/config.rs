@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub struct AppConfig {
     pub links_path: String,
     pub default_topic: String,
+    pub draft_location: String,
 }
 
 pub fn load_config() -> Result<AppConfig, ConfigError> {

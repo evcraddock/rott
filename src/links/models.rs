@@ -7,10 +7,12 @@ pub struct Link {
     pub source: Option<String>,
     #[serde(default = "Vec::new")]
     pub author: Vec<String>,
+    #[serde(default)]
     pub published: Option<NaiveDate>,
     #[serde(default = "default_created")]
     pub created: NaiveDate,
     pub description: Option<String>,
+    #[serde(default = "Vec::new")]
     pub tags: Vec<String>,
     pub content: Option<String>,
     pub file_path: Option<String>,

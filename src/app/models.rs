@@ -11,6 +11,7 @@ pub struct App {
     pub topics: StatefulList<String>,
     pub pages: StatefulList<Link>,
     pub active_pane: ActivePane,
+    config: Arc<AppConfig>,
 }
 
 pub struct StatefulList<T> {
@@ -87,13 +88,14 @@ impl App {
             topics: StatefulList::new(topics),
             pages: StatefulList::new(link_titles),
             active_pane: ActivePane::Topics,
+            config: config.clone(),
         }
     }
 
     pub fn reload(&mut self, selected_topic: String) {
         let svc = LinkService::new();
         let mut links = svc
-            .load_from_directory("/Users/erik/files/Notes/Inbox")
+            .load_from_directory(self.config.links_path.clone())
             .unwrap();
 
         links.sort_by(|a, b| a.created.cmp(&b.created)); // Sort by oldest first
@@ -111,6 +113,19 @@ impl App {
         if let Some(file_path) = &link.file_path {
             svc.delete_link(file_path.as_str())
                 .expect("could not delete file");
+        }
+    }
+
+    pub fn move_link_to_drafts(&self, link: &Link) {
+        let svc = LinkService::new();
+        if let Some(file_path) = &link.file_path {
+            // Update tags: remove "readlater" and add "linkblog"
+            svc.update_tags(file_path.as_str(), "readlater", "linkblog")
+                .expect("could not update tags");
+
+            // Move the file to drafts
+            svc.move_link(file_path.as_str(), &self.config.draft_location)
+                .expect("could not move file");
         }
     }
 }

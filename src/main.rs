@@ -6,7 +6,7 @@ mod links;
 use app::{ui, ActivePane, App};
 use config::load_config;
 use crossterm::{
-    event::{self, KeyCode, KeyEventKind},
+    event::{self, KeyCode, KeyEventKind, KeyModifiers},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
@@ -33,7 +33,7 @@ fn main() -> io::Result<()> {
     let config = Arc::new(load_config().expect("could not load config"));
 
     // Create app state
-    let mut app = App::new(None, &config);
+    let mut app = App::new(Some(config.default_topic.clone()), &config);
     app.topics.state.select(Some(0));
 
     loop {
@@ -51,6 +51,7 @@ fn main() -> io::Result<()> {
                 "↓/j: Move down",
                 "Enter: Open link",
                 "Del: Remove link",
+                "Shift+S: Move to drafts",
             ];
             let legend_text = Paragraph::new(legend.join(" | "))
                 .block(Block::default())
@@ -126,6 +127,23 @@ fn main() -> io::Result<()> {
                             if app.active_pane == ActivePane::Pages {
                                 if let Some(index) = app.pages.state.selected() {
                                     app.delete_link(&app.pages.items[index].clone());
+                                    if let Some(topic_index) = app.topics.state.selected() {
+                                        let selected_topic = app.topics.items[topic_index].clone();
+                                        app.reload(selected_topic);
+                                        let total_items = app.pages.items.len() - 1;
+                                        app.pages.state.select(Some(if index <= total_items {
+                                            index
+                                        } else {
+                                            index - 1
+                                        }));
+                                    }
+                                }
+                            }
+                        }
+                        KeyCode::Char('S') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                            if app.active_pane == ActivePane::Pages {
+                                if let Some(index) = app.pages.state.selected() {
+                                    app.move_link_to_drafts(&app.pages.items[index].clone());
                                     if let Some(topic_index) = app.topics.state.selected() {
                                         let selected_topic = app.topics.items[topic_index].clone();
                                         app.reload(selected_topic);

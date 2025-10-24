@@ -18,6 +18,99 @@ impl LinkService {
         }
     }
 
+    pub fn update_tags(&self, file_path: &str, remove_tag: &str, add_tag: &str) -> Result<(), LinkError> {
+        let content = fs::read_to_string(file_path)?;
+        let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+
+        let mut in_frontmatter = false;
+        let mut in_tags_section = false;
+        let mut tags_indent = String::new();
+        let mut modified = false;
+
+        for i in 0..lines.len() {
+            let line = &lines[i];
+
+            if line.trim() == "---" {
+                if !in_frontmatter {
+                    in_frontmatter = true;
+                    continue;
+                } else {
+                    // End of frontmatter, add linkblog tag if we were in tags section
+                    if in_tags_section && !modified {
+                        lines.insert(i, format!("{}- {}", tags_indent, add_tag));
+                    }
+                    break;
+                }
+            }
+
+            if in_frontmatter {
+                if line.starts_with("tags:") {
+                    in_tags_section = true;
+                    continue;
+                } else if in_tags_section {
+                    if line.starts_with("- ") || line.trim().starts_with("- ") {
+                        // Capture indentation from first tag
+                        if tags_indent.is_empty() {
+                            tags_indent = line.chars().take_while(|c| c.is_whitespace()).collect();
+                        }
+
+                        // Check if this line contains the tag to remove
+                        let tag_value = line.trim().trim_start_matches("- ").trim();
+                        if tag_value == remove_tag {
+                            // Replace readlater with linkblog
+                            lines[i] = format!("{}- {}", tags_indent, add_tag);
+                            modified = true;
+                            in_tags_section = false; // Stop processing tags
+                            continue;
+                        }
+                    } else {
+                        // No longer in tags section
+                        if !modified {
+                            // Add linkblog tag before this line
+                            lines.insert(i, format!("{}- {}", tags_indent, add_tag));
+                            modified = true;
+                        }
+                        in_tags_section = false;
+                    }
+                }
+            }
+        }
+
+        let updated_content = lines.join("\n") + "\n";
+        fs::write(file_path, updated_content)?;
+        Ok(())
+    }
+
+    pub fn move_link(&self, file_path: &str, destination_dir: &str) -> Result<(), LinkError> {
+        let source_path = Path::new(file_path);
+        let file_name = source_path
+            .file_name()
+            .ok_or_else(|| LinkError {
+                message: "Invalid file path".to_string()
+            })?;
+
+        // Expand ~ to home directory
+        let expanded_dest = if destination_dir.starts_with("~/") {
+            let home = dirs::home_dir()
+                .ok_or_else(|| LinkError {
+                    message: "Could not find home directory".to_string()
+                })?;
+            home.join(&destination_dir[2..])
+        } else {
+            Path::new(destination_dir).to_path_buf()
+        };
+
+        // Create destination directory if it doesn't exist
+        fs::create_dir_all(&expanded_dest)?;
+
+        let dest_path = expanded_dest.join(file_name);
+
+        match fs::rename(source_path, &dest_path) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(LinkError::from(e)),
+        }
+    }
+
     pub fn load_from_directory<P: AsRef<Path>>(
         &self,
         directory_path: P,
@@ -68,7 +161,11 @@ impl LinkService {
 
         let mut link: Link = match serde_yaml::from_str(&frontmatter_content) {
             Ok(link) => link,
-            Err(_) => return Ok(Link::default()),
+            Err(e) => {
+                eprintln!("YAML parse error: {:?}", e);
+                eprintln!("Frontmatter content:\n{}", frontmatter_content);
+                return Ok(Link::default())
+            },
         };
 
         link.content = if content.trim().is_empty() {
