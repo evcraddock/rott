@@ -11,6 +11,75 @@ impl LinkService {
         Self
     }
 
+    pub fn create_link(
+        &self,
+        url: String,
+        tags: Vec<String>,
+    ) -> Link {
+        Link {
+            title: url.clone(), // Use URL as title initially, will be replaced by metadata
+            source: Some(url),
+            author: Vec::new(),
+            published: None,
+            created: chrono::Local::now().date_naive(),
+            description: None,
+            tags,
+            content: None,
+            file_path: None,
+        }
+    }
+
+    pub fn save_link_to_file(
+        &self,
+        link: &Link,
+        directory_path: &str,
+    ) -> Result<String, LinkError> {
+        // Expand ~ to home directory
+        let expanded_dir = if directory_path.starts_with("~/") {
+            let home = dirs::home_dir()
+                .ok_or_else(|| LinkError {
+                    message: "Could not find home directory".to_string()
+                })?;
+            home.join(&directory_path[2..])
+        } else {
+            std::path::PathBuf::from(directory_path)
+        };
+
+        // Create directory if it doesn't exist
+        fs::create_dir_all(&expanded_dir)?;
+
+        // Generate filename from title (first 20 chars, sanitized)
+        let sanitized_title = link.title
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '-' || c.is_whitespace())
+            .take(20)
+            .collect::<String>()
+            .trim()
+            .replace(' ', "-")
+            .to_lowercase();
+
+        let filename = if sanitized_title.is_empty() {
+            format!("{}.md", chrono::Local::now().format("%Y-%m-%d-%H%M%S"))
+        } else {
+            format!("{}.md", sanitized_title)
+        };
+        let file_path = expanded_dir.join(&filename);
+
+        // Serialize frontmatter
+        let frontmatter = serde_yaml::to_string(&link)
+            .map_err(|e| LinkError {
+                message: format!("Failed to serialize frontmatter: {}", e)
+            })?;
+
+        // Create markdown content
+        let content = format!("---\n{}---\n", frontmatter);
+
+        // Write to file
+        fs::write(&file_path, content)?;
+
+        Ok(file_path.to_string_lossy().to_string())
+    }
+
     pub fn delete_link(&self, file_path: &str) -> Result<(), LinkError> {
         match fs::remove_file(file_path) {
             Ok(_) => Ok(()),
@@ -335,6 +404,187 @@ Test content"#;
         assert!(link.created != NaiveDate::from_ymd_opt(2025, 1, 1).unwrap());
         assert!(link.created <= chrono::Local::now().naive_local().date());
         assert_eq!(link.tags, vec!["test", "example"]);
+    }
+
+    #[test]
+    fn test_create_link_basic() {
+        let service = LinkService::new();
+        let url = "https://example.com".to_string();
+        let tags = vec!["test".to_string()];
+
+        let link = service.create_link(url.clone(), tags.clone());
+
+        assert_eq!(link.title, url);
+        assert_eq!(link.source, Some(url));
+        assert_eq!(link.tags, tags);
+        assert!(link.author.is_empty());
+        assert!(link.description.is_none());
+        assert!(link.published.is_none());
+        assert!(link.content.is_none());
+        assert!(link.file_path.is_none());
+        assert_eq!(link.created, chrono::Local::now().date_naive());
+    }
+
+    #[test]
+    fn test_create_link_no_tags() {
+        let service = LinkService::new();
+        let url = "https://example.com".to_string();
+
+        let link = service.create_link(url.clone(), Vec::new());
+
+        assert_eq!(link.title, url);
+        assert!(link.tags.is_empty());
+    }
+
+    #[test]
+    fn test_save_link_to_file() {
+        let dir = tempdir().unwrap();
+        let service = LinkService::new();
+
+        let link = service.create_link(
+            "https://example.com".to_string(),
+            vec!["test".to_string(), "example".to_string()],
+        );
+
+        let file_path = service
+            .save_link_to_file(&link, dir.path().to_str().unwrap())
+            .unwrap();
+
+        // Verify file exists
+        assert!(std::path::Path::new(&file_path).exists());
+
+        // Verify file content
+        let content = fs::read_to_string(&file_path).unwrap();
+        assert!(content.starts_with("---\n"));
+        assert!(content.contains("title:"));
+        assert!(content.contains("source: https://example.com"));
+        assert!(content.contains("test"));
+        assert!(content.contains("example"));
+        // Verify file_path and content are not in frontmatter
+        assert!(!content.contains("file_path:"));
+        assert!(!content.contains("content:"));
+    }
+
+    #[test]
+    fn test_save_link_creates_directory() {
+        let dir = tempdir().unwrap();
+        let service = LinkService::new();
+
+        // Create a nested path that doesn't exist
+        let nested_path = dir.path().join("nested").join("directory");
+        let link = service.create_link(
+            "https://example.com".to_string(),
+            vec!["test".to_string()],
+        );
+
+        let file_path = service
+            .save_link_to_file(&link, nested_path.to_str().unwrap())
+            .unwrap();
+
+        // Verify directory was created
+        assert!(nested_path.exists());
+        assert!(std::path::Path::new(&file_path).exists());
+    }
+
+    #[test]
+    fn test_save_link_filename_format() {
+        let dir = tempdir().unwrap();
+        let service = LinkService::new();
+
+        // Create link with a descriptive title
+        let mut link = service.create_link(
+            "https://example.com".to_string(),
+            Vec::new(),
+        );
+        link.title = "Rust Programming Guide".to_string();
+
+        let file_path = service
+            .save_link_to_file(&link, dir.path().to_str().unwrap())
+            .unwrap();
+
+        // Extract filename
+        let filename = std::path::Path::new(&file_path)
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap();
+
+        // Verify filename format: sanitized title (20 chars max)
+        assert_eq!(filename, "rust-programming-gui.md");
+    }
+
+    #[test]
+    fn test_save_link_filename_sanitization() {
+        let dir = tempdir().unwrap();
+        let service = LinkService::new();
+
+        let mut link = service.create_link(
+            "https://example.com".to_string(),
+            Vec::new(),
+        );
+        link.title = "Test! Title: With (Punctuation)".to_string();
+
+        let file_path = service
+            .save_link_to_file(&link, dir.path().to_str().unwrap())
+            .unwrap();
+
+        let filename = std::path::Path::new(&file_path)
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap();
+
+        // Should remove punctuation and keep only alphanumeric, dashes, and spaces (converted to dashes)
+        assert_eq!(filename, "test-title-with-punc.md");
+    }
+
+    #[test]
+    fn test_save_link_filename_fallback_empty_title() {
+        let dir = tempdir().unwrap();
+        let service = LinkService::new();
+
+        let mut link = service.create_link(
+            "https://example.com".to_string(),
+            Vec::new(),
+        );
+        link.title = "!!!".to_string(); // Will be empty after sanitization
+
+        let file_path = service
+            .save_link_to_file(&link, dir.path().to_str().unwrap())
+            .unwrap();
+
+        let filename = std::path::Path::new(&file_path)
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap();
+
+        // Should fallback to timestamp format
+        assert!(filename.ends_with(".md"));
+        assert!(filename.len() >= 20); // At least YYYY-MM-DD-HHMMSS.md
+    }
+
+    #[test]
+    fn test_save_and_load_roundtrip() {
+        let dir = tempdir().unwrap();
+        let service = LinkService::new();
+
+        let original_link = service.create_link(
+            "https://example.com".to_string(),
+            vec!["rust".to_string(), "programming".to_string()],
+        );
+
+        let file_path = service
+            .save_link_to_file(&original_link, dir.path().to_str().unwrap())
+            .unwrap();
+
+        let loaded_link = service.load_from_file(&file_path).unwrap();
+
+        assert_eq!(loaded_link.title, original_link.title);
+        assert_eq!(loaded_link.source, original_link.source);
+        assert_eq!(loaded_link.tags, original_link.tags);
+        assert_eq!(loaded_link.author, original_link.author);
+        assert_eq!(loaded_link.description, original_link.description);
     }
 
     #[test]

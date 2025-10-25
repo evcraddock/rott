@@ -24,17 +24,20 @@ Brain ROTT is a terminal UI application that helps you organize and access conte
 ### Install from source
 
 1. Clone the repository:
+
    ```bash
    git clone https://github.com/evcraddock/rott.git
    cd rott
    ```
 
 2. Build and install:
+
    ```bash
    cargo build --release
    ```
 
 3. Copy the binary to your system (optional):
+
    ```bash
    # Using the provided script (requires sudo)
    ./hack/deploy.sh
@@ -83,11 +86,13 @@ rott
 To update to the latest version:
 
 1. Pull the latest changes:
+
    ```bash
    git pull
    ```
 
 2. Rebuild and reinstall:
+
    ```bash
    cargo build --release
    ./hack/deploy.sh  # Or copy manually to /usr/local/bin

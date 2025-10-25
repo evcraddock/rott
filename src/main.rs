@@ -1,9 +1,13 @@
 #![allow(dead_code)]
 mod app;
+mod cli;
 mod config;
 mod links;
+mod metadata;
 
 use app::{ui, ActivePane, App};
+use cli::{Cli, Commands, CreateCommands};
+use clap::Parser;
 use config::load_config;
 use crossterm::{
     event::{self, KeyCode, KeyEventKind, KeyModifiers},
@@ -25,12 +29,81 @@ fn main_debug() {
     App::new(None, &config);
 }
 
+fn handle_create_link(url: String, tags: Option<Vec<String>>, config: &Arc<config::AppConfig>) {
+    use links::LinkService;
+
+    let service = LinkService::new();
+    let tag_vec = tags.unwrap_or_default();
+
+    // Create basic link
+    let mut link = service.create_link(url.clone(), tag_vec.clone());
+
+    // Try to fetch metadata
+    println!("Fetching metadata from {}...", url);
+    match metadata::fetch_url_metadata(&url) {
+        Ok(page_metadata) => {
+            if let Some(title) = page_metadata.title {
+                link.title = title.clone();
+                println!("  Title: {}", title);
+            }
+            if let Some(description) = page_metadata.description {
+                link.description = Some(description.clone());
+                println!("  Description: {}", if description.len() > 80 {
+                    format!("{}...", &description[..80])
+                } else {
+                    description
+                });
+            }
+            if !page_metadata.author.is_empty() {
+                link.author = page_metadata.author.clone();
+                println!("  Author: {}", page_metadata.author.join(", "));
+            }
+        }
+        Err(e) => {
+            eprintln!("  Warning: Could not fetch metadata: {}", e);
+            eprintln!("  Continuing with URL as title...");
+        }
+    }
+
+    // Save to file
+    match service.save_link_to_file(&link, &config.links_path) {
+        Ok(file_path) => {
+            println!("\n✓ Link created successfully!");
+            if !tag_vec.is_empty() {
+                println!("  Tags: {}", tag_vec.join(", "));
+            }
+            println!("  File: {}", file_path);
+        }
+        Err(e) => {
+            eprintln!("\n✗ Error creating link: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
 fn main() -> io::Result<()> {
+    let cli = Cli::parse();
+    let config = Arc::new(load_config().expect("could not load config"));
+
+    // Handle CLI commands
+    match cli.command {
+        Some(Commands::Create { resource }) => {
+            match resource {
+                CreateCommands::Link { url, tags } => {
+                    handle_create_link(url, tags, &config);
+                    return Ok(());
+                }
+            }
+        }
+        None => {
+            // No command specified, launch TUI
+        }
+    }
+
     // Setup terminal
     enable_raw_mode()?;
     stdout().execute(EnterAlternateScreen)?;
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
-    let config = Arc::new(load_config().expect("could not load config"));
 
     // Create app state
     let mut app = App::new(Some(config.default_topic.clone()), &config);

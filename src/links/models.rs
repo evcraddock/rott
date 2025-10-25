@@ -14,7 +14,9 @@ pub struct Link {
     pub description: Option<String>,
     #[serde(default = "Vec::new")]
     pub tags: Vec<String>,
+    #[serde(skip_serializing)]
     pub content: Option<String>,
+    #[serde(skip)]
     pub file_path: Option<String>,
 }
 
