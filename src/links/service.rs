@@ -48,11 +48,11 @@ impl LinkService {
         // Create directory if it doesn't exist
         fs::create_dir_all(&expanded_dir)?;
 
-        // Generate filename from title (first 20 chars, sanitized)
+        // Generate filename from title (first 35 chars, sanitized)
         let sanitized_title = link.title
             .chars()
             .filter(|c| c.is_alphanumeric() || *c == '-' || c.is_whitespace())
-            .take(20)
+            .take(35)
             .collect::<String>()
             .trim()
             .replace(' ', "-")
@@ -85,6 +85,76 @@ impl LinkService {
             Ok(_) => Ok(()),
             Err(e) => Err(LinkError::from(e)),
         }
+    }
+
+    pub fn replace_all_tags(&self, file_path: &str, new_tags: &[String]) -> Result<(), LinkError> {
+        let content = fs::read_to_string(file_path)?;
+        let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+
+        let mut in_frontmatter = false;
+        let mut in_tags_section = false;
+        let mut tags_start_index = None;
+        let mut tags_end_index = None;
+        let mut tags_indent = String::new();
+
+        // Find the tags section
+        for i in 0..lines.len() {
+            let line = &lines[i];
+
+            if line.trim() == "---" {
+                if !in_frontmatter {
+                    in_frontmatter = true;
+                    continue;
+                } else {
+                    // End of frontmatter
+                    if in_tags_section {
+                        tags_end_index = Some(i);
+                    }
+                    break;
+                }
+            }
+
+            if in_frontmatter {
+                if line.starts_with("tags:") {
+                    in_tags_section = true;
+                    tags_start_index = Some(i);
+                    continue;
+                } else if in_tags_section {
+                    if line.starts_with("- ") || line.trim().starts_with("- ") {
+                        // Capture indentation from first tag
+                        if tags_indent.is_empty() {
+                            tags_indent = line.chars().take_while(|c| c.is_whitespace()).collect();
+                        }
+                    } else {
+                        // No longer in tags section
+                        tags_end_index = Some(i);
+                        in_tags_section = false;
+                    }
+                }
+            }
+        }
+
+        // Replace tags
+        if let Some(start) = tags_start_index {
+            let end = tags_end_index.unwrap_or(lines.len());
+
+            // Use default indentation if we couldn't capture it
+            if tags_indent.is_empty() {
+                tags_indent = "  ".to_string();
+            }
+
+            // Remove old tag lines (keep the "tags:" line)
+            lines.drain((start + 1)..end);
+
+            // Insert new tags
+            for (i, tag) in new_tags.iter().enumerate() {
+                lines.insert(start + 1 + i, format!("{}- {}", tags_indent, tag));
+            }
+        }
+
+        let updated_content = lines.join("\n") + "\n";
+        fs::write(file_path, updated_content)?;
+        Ok(())
     }
 
     pub fn update_tags(&self, file_path: &str, remove_tag: &str, add_tag: &str) -> Result<(), LinkError> {
@@ -400,9 +470,11 @@ Test content"#;
         assert_eq!(link.author, vec!["John Doe", "Jane Smith"]);
         // The created date should come from the file creation time, not the frontmatter
         // Since we can't predict the exact file creation time in tests, we'll just check
-        // that it's a valid date and not the default
+        // that it's a valid date and not the default, and reasonably close to now
         assert!(link.created != NaiveDate::from_ymd_opt(2025, 1, 1).unwrap());
-        assert!(link.created <= chrono::Local::now().naive_local().date());
+        let now = chrono::Local::now().naive_local().date();
+        let diff = (now - link.created).num_days().abs();
+        assert!(diff <= 1, "Created date should be within 1 day of now");
         assert_eq!(link.tags, vec!["test", "example"]);
     }
 
@@ -509,8 +581,8 @@ Test content"#;
             .to_str()
             .unwrap();
 
-        // Verify filename format: sanitized title (20 chars max)
-        assert_eq!(filename, "rust-programming-gui.md");
+        // Verify filename format: sanitized title (35 chars max)
+        assert_eq!(filename, "rust-programming-guide.md");
     }
 
     #[test]

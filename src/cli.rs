@@ -27,6 +27,10 @@ pub enum CreateCommands {
         /// Tags to add to the link (comma-separated)
         #[arg(long, value_delimiter = ',')]
         tags: Option<Vec<String>>,
+
+        /// Silent mode - suppress all output messages
+        #[arg(short, long)]
+        silent: bool,
     },
 }
 
@@ -45,9 +49,10 @@ mod tests {
         let cli = Cli::try_parse_from(vec!["rott", "create", "link", "https://example.com"]).unwrap();
 
         match cli.command {
-            Some(Commands::Create { resource: CreateCommands::Link { url, tags } }) => {
+            Some(Commands::Create { resource: CreateCommands::Link { url, tags, silent } }) => {
                 assert_eq!(url, "https://example.com");
                 assert!(tags.is_none());
+                assert_eq!(silent, false);
             }
             _ => panic!("Expected Create Link command"),
         }
@@ -65,13 +70,14 @@ mod tests {
         ]).unwrap();
 
         match cli.command {
-            Some(Commands::Create { resource: CreateCommands::Link { url, tags } }) => {
+            Some(Commands::Create { resource: CreateCommands::Link { url, tags, silent } }) => {
                 assert_eq!(url, "https://example.com");
                 assert_eq!(tags, Some(vec![
                     "rust".to_string(),
                     "programming".to_string(),
                     "cli".to_string()
                 ]));
+                assert_eq!(silent, false);
             }
             _ => panic!("Expected Create Link command"),
         }
@@ -89,9 +95,72 @@ mod tests {
         ]).unwrap();
 
         match cli.command {
-            Some(Commands::Create { resource: CreateCommands::Link { url, tags } }) => {
+            Some(Commands::Create { resource: CreateCommands::Link { url, tags, silent } }) => {
                 assert_eq!(url, "https://example.com");
                 assert_eq!(tags, Some(vec!["rust".to_string()]));
+                assert_eq!(silent, false);
+            }
+            _ => panic!("Expected Create Link command"),
+        }
+    }
+
+    #[test]
+    fn test_create_link_with_silent_flag() {
+        let cli = Cli::try_parse_from(vec![
+            "rott",
+            "create",
+            "link",
+            "https://example.com",
+            "--silent"
+        ]).unwrap();
+
+        match cli.command {
+            Some(Commands::Create { resource: CreateCommands::Link { url, tags, silent } }) => {
+                assert_eq!(url, "https://example.com");
+                assert!(tags.is_none());
+                assert_eq!(silent, true);
+            }
+            _ => panic!("Expected Create Link command"),
+        }
+    }
+
+    #[test]
+    fn test_create_link_with_silent_short_flag() {
+        let cli = Cli::try_parse_from(vec![
+            "rott",
+            "create",
+            "link",
+            "https://example.com",
+            "-s"
+        ]).unwrap();
+
+        match cli.command {
+            Some(Commands::Create { resource: CreateCommands::Link { url, tags, silent } }) => {
+                assert_eq!(url, "https://example.com");
+                assert!(tags.is_none());
+                assert_eq!(silent, true);
+            }
+            _ => panic!("Expected Create Link command"),
+        }
+    }
+
+    #[test]
+    fn test_create_link_with_silent_and_tags() {
+        let cli = Cli::try_parse_from(vec![
+            "rott",
+            "create",
+            "link",
+            "https://example.com",
+            "--tags",
+            "rust,cli",
+            "--silent"
+        ]).unwrap();
+
+        match cli.command {
+            Some(Commands::Create { resource: CreateCommands::Link { url, tags, silent } }) => {
+                assert_eq!(url, "https://example.com");
+                assert_eq!(tags, Some(vec!["rust".to_string(), "cli".to_string()]));
+                assert_eq!(silent, true);
             }
             _ => panic!("Expected Create Link command"),
         }

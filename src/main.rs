@@ -4,6 +4,7 @@ mod cli;
 mod config;
 mod links;
 mod metadata;
+mod watcher;
 
 use app::{ui, ActivePane, App};
 use cli::{Cli, Commands, CreateCommands};
@@ -29,7 +30,7 @@ fn main_debug() {
     App::new(None, &config);
 }
 
-fn handle_create_link(url: String, tags: Option<Vec<String>>, config: &Arc<config::AppConfig>) {
+fn handle_create_link(url: String, tags: Option<Vec<String>>, silent: bool, config: &Arc<config::AppConfig>) {
     use links::LinkService;
 
     let service = LinkService::new();
@@ -39,43 +40,57 @@ fn handle_create_link(url: String, tags: Option<Vec<String>>, config: &Arc<confi
     let mut link = service.create_link(url.clone(), tag_vec.clone());
 
     // Try to fetch metadata
-    println!("Fetching metadata from {}...", url);
+    if !silent {
+        println!("Fetching metadata from {}...", url);
+    }
     match metadata::fetch_url_metadata(&url) {
         Ok(page_metadata) => {
             if let Some(title) = page_metadata.title {
                 link.title = title.clone();
-                println!("  Title: {}", title);
+                if !silent {
+                    println!("  Title: {}", title);
+                }
             }
             if let Some(description) = page_metadata.description {
                 link.description = Some(description.clone());
-                println!("  Description: {}", if description.len() > 80 {
-                    format!("{}...", &description[..80])
-                } else {
-                    description
-                });
+                if !silent {
+                    println!("  Description: {}", if description.len() > 80 {
+                        format!("{}...", &description[..80])
+                    } else {
+                        description
+                    });
+                }
             }
             if !page_metadata.author.is_empty() {
                 link.author = page_metadata.author.clone();
-                println!("  Author: {}", page_metadata.author.join(", "));
+                if !silent {
+                    println!("  Author: {}", page_metadata.author.join(", "));
+                }
             }
         }
         Err(e) => {
-            eprintln!("  Warning: Could not fetch metadata: {}", e);
-            eprintln!("  Continuing with URL as title...");
+            if !silent {
+                eprintln!("  Warning: Could not fetch metadata: {}", e);
+                eprintln!("  Continuing with URL as title...");
+            }
         }
     }
 
     // Save to file
     match service.save_link_to_file(&link, &config.links_path) {
         Ok(file_path) => {
-            println!("\n✓ Link created successfully!");
-            if !tag_vec.is_empty() {
-                println!("  Tags: {}", tag_vec.join(", "));
+            if !silent {
+                println!("\n✓ Link created successfully!");
+                if !tag_vec.is_empty() {
+                    println!("  Tags: {}", tag_vec.join(", "));
+                }
+                println!("  File: {}", file_path);
             }
-            println!("  File: {}", file_path);
         }
         Err(e) => {
-            eprintln!("\n✗ Error creating link: {}", e);
+            if !silent {
+                eprintln!("\n✗ Error creating link: {}", e);
+            }
             std::process::exit(1);
         }
     }
@@ -89,8 +104,8 @@ fn main() -> io::Result<()> {
     match cli.command {
         Some(Commands::Create { resource }) => {
             match resource {
-                CreateCommands::Link { url, tags } => {
-                    handle_create_link(url, tags, &config);
+                CreateCommands::Link { url, tags, silent } => {
+                    handle_create_link(url, tags, silent, &config);
                     return Ok(());
                 }
             }
@@ -107,7 +122,19 @@ fn main() -> io::Result<()> {
 
     // Create app state
     let mut app = App::new(Some(config.default_topic.clone()), &config);
-    app.topics.state.select(Some(0));
+    if !app.topics.items.is_empty() {
+        app.topics.state.select(Some(0));
+    }
+
+    // Setup file watcher for the links directory
+    let file_watcher = match watcher::FileWatcher::new(&config.links_path) {
+        Ok(watcher) => Some(watcher),
+        Err(e) => {
+            eprintln!("Warning: Could not setup file watcher: {}", e);
+            eprintln!("Auto-refresh will not work. You can manually refresh with 'r'.");
+            None
+        }
+    };
 
     loop {
         terminal.draw(|frame| {
@@ -116,16 +143,24 @@ fn main() -> io::Result<()> {
             // Draw main UI
             ui(frame, &mut app);
             // Draw legend at bottom
-            let legend = vec![
-                "q: Quit",
-                "Tab/l: Right pane",
-                "Shift+Tab/h: Left pane",
-                "↑/k: Move up",
-                "↓/j: Move down",
-                "Enter: Open link",
-                "Del: Remove link",
-                "Shift+S: Move to drafts",
-            ];
+            let legend = if app.input_mode == app::InputMode::EditingTags {
+                vec![
+                    "Enter: Save",
+                    "Esc: Cancel",
+                ]
+            } else {
+                vec![
+                    "q: Quit",
+                    "Tab/l: Right",
+                    "Shift+Tab/h: Left",
+                    "↑/k: Up",
+                    "↓/j: Down",
+                    "Enter: Open",
+                    "Del: Remove",
+                    "Shift+S: Drafts",
+                    "Shift+T: Edit tags",
+                ]
+            };
             let legend_text = Paragraph::new(legend.join(" | "))
                 .block(Block::default())
                 .alignment(Alignment::Center);
@@ -134,10 +169,47 @@ fn main() -> io::Result<()> {
             frame.render_widget(legend_text, legend_area);
         })?;
 
+        // Check for file system changes
+        if let Some(ref watcher) = file_watcher {
+            if watcher.check_events() {
+                // Files changed, reload current topic
+                if let Some(topic_index) = app.topics.state.selected() {
+                    let selected_topic = app.topics.items[topic_index].clone();
+                    app.reload(selected_topic);
+                }
+            }
+        }
+
         // Handle input
         if event::poll(std::time::Duration::from_millis(16))? {
             if let event::Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
+                    // Handle input mode-specific keys
+                    if app.input_mode == app::InputMode::EditingTags {
+                        match key.code {
+                            KeyCode::Enter => {
+                                app.save_edited_tags();
+                                // Reload to show updated tags
+                                if let Some(topic_index) = app.topics.state.selected() {
+                                    let selected_topic = app.topics.items[topic_index].clone();
+                                    app.reload(selected_topic);
+                                }
+                            }
+                            KeyCode::Esc => {
+                                app.cancel_editing();
+                            }
+                            KeyCode::Char(c) => {
+                                app.tag_input.push(c);
+                            }
+                            KeyCode::Backspace => {
+                                app.tag_input.pop();
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+
+                    // Normal mode key handling
                     match key.code {
                         KeyCode::Char('q') => break,
                         KeyCode::Tab | KeyCode::Char('l') => {
@@ -184,14 +256,18 @@ fn main() -> io::Result<()> {
                                 }
                             } else if app.active_pane == ActivePane::Topics {
                                 app = App::new(None, &config);
-                                app.topics.state.select(Some(0));
+                                if !app.topics.items.is_empty() {
+                                    app.topics.state.select(Some(0));
+                                }
                             }
                         }
                         KeyCode::Enter => {
                             if app.active_pane == ActivePane::Pages {
                                 if let Some(index) = app.pages.state.selected() {
-                                    if let Some(url) = app.pages.items[index].source.clone() {
-                                        let _ = open::that(url);
+                                    if index < app.pages.items.len() {
+                                        if let Some(url) = app.pages.items[index].source.clone() {
+                                            let _ = open::that(url);
+                                        }
                                     }
                                 }
                             }
@@ -199,16 +275,23 @@ fn main() -> io::Result<()> {
                         KeyCode::Delete => {
                             if app.active_pane == ActivePane::Pages {
                                 if let Some(index) = app.pages.state.selected() {
-                                    app.delete_link(&app.pages.items[index].clone());
-                                    if let Some(topic_index) = app.topics.state.selected() {
-                                        let selected_topic = app.topics.items[topic_index].clone();
-                                        app.reload(selected_topic);
-                                        let total_items = app.pages.items.len() - 1;
-                                        app.pages.state.select(Some(if index <= total_items {
-                                            index
-                                        } else {
-                                            index - 1
-                                        }));
+                                    if index < app.pages.items.len() {
+                                        app.delete_link(&app.pages.items[index].clone());
+                                        if let Some(topic_index) = app.topics.state.selected() {
+                                            let selected_topic = app.topics.items[topic_index].clone();
+
+                                            // Calculate which index to select after deletion
+                                            let new_index = if index == 0 {
+                                                // Deleted first item, select new first item (index 0)
+                                                Some(0)
+                                            } else {
+                                                // Try to keep same index, or go to last item if we're past the end
+                                                Some(index)
+                                            };
+
+                                            // Reload with the calculated selection
+                                            app.reload_with_page_selection(selected_topic, new_index);
+                                        }
                                     }
                                 }
                             }
@@ -216,18 +299,30 @@ fn main() -> io::Result<()> {
                         KeyCode::Char('S') if key.modifiers.contains(KeyModifiers::SHIFT) => {
                             if app.active_pane == ActivePane::Pages {
                                 if let Some(index) = app.pages.state.selected() {
-                                    app.move_link_to_drafts(&app.pages.items[index].clone());
-                                    if let Some(topic_index) = app.topics.state.selected() {
-                                        let selected_topic = app.topics.items[topic_index].clone();
-                                        app.reload(selected_topic);
-                                        let total_items = app.pages.items.len() - 1;
-                                        app.pages.state.select(Some(if index <= total_items {
-                                            index
-                                        } else {
-                                            index - 1
-                                        }));
+                                    if index < app.pages.items.len() {
+                                        app.move_link_to_drafts(&app.pages.items[index].clone());
+                                        if let Some(topic_index) = app.topics.state.selected() {
+                                            let selected_topic = app.topics.items[topic_index].clone();
+
+                                            // Calculate which index to select after moving
+                                            let new_index = if index == 0 {
+                                                // Moved first item, select new first item (index 0)
+                                                Some(0)
+                                            } else {
+                                                // Try to keep same index, or go to last item if we're past the end
+                                                Some(index)
+                                            };
+
+                                            // Reload with the calculated selection
+                                            app.reload_with_page_selection(selected_topic, new_index);
+                                        }
                                     }
                                 }
+                            }
+                        }
+                        KeyCode::Char('T') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                            if app.active_pane == ActivePane::Pages {
+                                app.start_editing_tags();
                             }
                         }
                         _ => {}
