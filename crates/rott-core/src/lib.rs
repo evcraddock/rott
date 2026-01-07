@@ -26,4 +26,4 @@ pub use config::Config;
 pub use document::{DocumentError, RottDocument};
 pub use document_id::{DocumentId, DocumentIdError};
 pub use models::{Link, Note, Tag};
-pub use storage::AutomergePersistence;
+pub use storage::{AutomergePersistence, SqliteProjection};
