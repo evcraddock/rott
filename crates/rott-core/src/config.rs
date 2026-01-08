@@ -281,6 +281,10 @@ mod tests {
 
     #[test]
     fn test_load_from_path_missing_file() {
+        // Clear environment variables that could override defaults
+        std::env::remove_var("ROTT_SYNC_URL");
+        std::env::remove_var("ROTT_SYNC_ENABLED");
+
         let path = PathBuf::from("/nonexistent/config.toml");
         let config = Config::load_from_path(&path).unwrap();
         // Should return defaults when file doesn't exist
