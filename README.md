@@ -1,129 +1,187 @@
-# Brain ROTT
+# ROTT
 
-Record of Tagged Topics - A terminal-based tool to organize and navigate your knowledge by tags.
+**R**ecord **O**f **T**agged **T**opics — A local-first links and notes manager with real-time sync.
 
 ## Overview
 
-Brain ROTT is a terminal UI application that helps you organize and access content by topics (tags). It scans your configured directory for markdown files with front matter, extracts tags, and presents them in a navigable interface.
+ROTT helps you save, organize, and access links with tags and notes. It features a terminal UI for browsing your collection and a CLI for scripting and automation.
 
-## Features
+**Key features:**
 
-- Terminal-based interface using Ratatui
-- Navigate between topic and content panes
-- Open links directly in your browser
-- Delete unwanted links
-- Keyboard shortcuts for navigation
+- **Local-first**: Your data is stored locally using Automerge CRDTs
+- **Real-time sync**: Optional sync across devices via WebSocket
+- **TUI interface**: Three-pane layout with filters, items, and detail view
+- **CLI commands**: Full CLI for scripting and automation
+- **Metadata scraping**: Automatically fetches title, description, and author from URLs
+- **Notes**: Attach notes to any link
 
 ## Installation
 
-### Prerequisites
-
-- [Rust](https://www.rust-lang.org/tools/install) and Cargo installed
-- Linux, macOS or Windows
-
-### Install from source
-
-1. Clone the repository:
-
-   ```bash
-   git clone https://github.com/evcraddock/rott.git
-   cd rott
-   ```
-
-2. Build and install:
-
-   ```bash
-   cargo build --release
-   ```
-
-3. Copy the binary to your system (optional):
-
-   ```bash
-   # Using the provided script (requires sudo)
-   ./hack/deploy.sh
-   
-   # Or manually
-   sudo cp target/release/rott /usr/local/bin/rott
-   ```
-
-### Configuration
-
-Create a configuration file at `~/.config/rott/config.yaml`:
-
-```yaml
-links_path: "/path/to/your/markdown/files"
-default_topic: "default-tag-to-select"
-```
-
-Alternatively, you can set configuration using environment variables:
+### Quick Install (Linux/macOS)
 
 ```bash
-export APP_LINKS_PATH="/path/to/your/markdown/files"
-export APP_DEFAULT_TOPIC="default-tag-to-select"
+curl -fsSL https://raw.githubusercontent.com/evcraddock/rott/main/install.sh | bash
+```
+
+### Download Binary
+
+Pre-built binaries are available on the [releases page](https://github.com/evcraddock/rott/releases):
+
+- Linux x86_64
+- macOS x86_64 (Intel)
+- macOS aarch64 (Apple Silicon)
+- Windows x86_64
+
+### Build from Source
+
+```bash
+git clone https://github.com/evcraddock/rott.git
+cd rott
+cargo install --path crates/rott-cli
 ```
 
 ## Usage
 
-### Starting the application
+### TUI Interface
+
+Launch the TUI by running `rott` with no arguments:
 
 ```bash
 rott
 ```
 
-### Keyboard shortcuts
+The interface has three panes:
 
-- `q`: Quit the application
-- `Tab` or `l`: Move to right pane (Pages)
-- `Shift+Tab` or `h`: Move to left pane (Topics)
-- `↑` or `k`: Move selection up
-- `↓` or `j`: Move selection down
-- `Enter`: Open selected link in browser
-- `Delete`: Remove selected link
-- `r`: Refresh content
+| Pane | Description |
+|------|-------------|
+| **Filters** | Browse by All, Favorites, Untagged, or specific tags |
+| **Items** | List of links matching the selected filter |
+| **Detail** | Full details of the selected link including notes |
 
-## Updating
+#### Keyboard Shortcuts
 
-To update to the latest version:
+**Navigation:**
 
-1. Pull the latest changes:
+| Key | Action |
+|-----|--------|
+| `j` / `↓` | Move down |
+| `k` / `↑` | Move up |
+| `h` / `←` | Move to left pane |
+| `l` / `→` | Move to right pane |
+| `Tab` | Next pane |
+| `Shift+Tab` | Previous pane |
 
-   ```bash
-   git pull
-   ```
+**Actions:**
 
-2. Rebuild and reinstall:
+| Key | Action |
+|-----|--------|
+| `Enter` | Open link in browser |
+| `Space` | Toggle favorite tag |
+| `a` | Add new link |
+| `e` | Edit selected link |
+| `t` | Edit tags |
+| `n` | Add note to link |
+| `d` | Delete selected item |
+| `u` | Copy URL to clipboard |
+| `/` | Search |
+| `:` | Command mode |
+| `?` | Show help |
+| `Ctrl+s` | Force sync |
+| `q` | Quit |
 
-   ```bash
-   cargo build --release
-   ./hack/deploy.sh  # Or copy manually to /usr/local/bin
-   ```
+### CLI Commands
 
-## Content Format
+```bash
+# Add a link
+rott link create https://example.com --tag rust --tag programming
 
-Brain ROTT expects markdown files with front matter that includes:
+# List all links
+rott link list
 
-- `title`: Title of the content
-- `tags`: List of tags to categorize the content
-- `source`: (Optional) URL to original content
-- `author`: (Optional) Content author(s)
-- `published`: (Optional) Publication date
-- `description`: (Optional) Brief description
+# List links by tag
+rott link list --tag rust
 
-Example markdown file:
+# Show link details
+rott link show <id>
 
-```markdown
----
-title: "Example Article"
-tags: ["rust", "programming", "tutorial"]
-source: "https://example.com/article"
-author: ["Jane Doe"]
-published: 2023-01-15
-description: "A tutorial about Rust programming"
----
+# Search links
+rott link search "search query"
 
-Content of the article here...
+# Edit a link (opens in $EDITOR)
+rott link edit <id>
+
+# Delete a link
+rott link delete <id>
+
+# Add a note to a link
+rott link note add <link-id> "Note content"
+
+# List all tags
+rott tags
+
+# Show sync status
+rott status
+
+# Force sync
+rott sync
+
+# Show configuration
+rott config show
 ```
+
+## Configuration
+
+Configuration file location: `~/.config/rott/config.toml`
+
+```toml
+# Data directory (default: ~/.local/share/rott)
+data_dir = "/path/to/data"
+
+# Sync server URL (optional)
+sync_url = "wss://sync.example.com"
+
+# Enable sync (default: false)
+sync_enabled = true
+
+# Tag used for Favorites filter (optional)
+favorite_tag = "favorite"
+```
+
+### Environment Variables
+
+Environment variables override config file values:
+
+| Variable | Description |
+|----------|-------------|
+| `ROTT_DATA_DIR` | Data directory path |
+| `ROTT_SYNC_URL` | Sync server URL |
+| `ROTT_SYNC_ENABLED` | Enable sync (`true` or `1`) |
+
+## Data Storage
+
+ROTT uses a local-first architecture:
+
+- **Automerge document**: Primary data store using CRDTs for conflict-free sync
+- **SQLite database**: Projection layer for fast queries and full-text search
+
+Data is stored in the data directory (default `~/.local/share/rott`):
+
+```
+~/.local/share/rott/
+├── document.automerge   # Automerge document
+├── links.db             # SQLite projection
+└── sync_state.json      # Sync state
+```
+
+## Sync
+
+ROTT supports real-time sync using the Automerge sync protocol over WebSocket. To enable sync:
+
+1. Set `sync_url` to your sync server address
+2. Set `sync_enabled = true`
+
+When sync is enabled, changes are automatically synchronized in real-time. The sync protocol handles conflicts automatically using Automerge's CRDT merge semantics.
 
 ## License
 
-See the [LICENSE](LICENSE) file for details.
+MIT License - see [LICENSE](LICENSE) for details.
