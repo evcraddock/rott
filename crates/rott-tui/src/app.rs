@@ -16,7 +16,6 @@ pub enum InputMode {
 
 /// Type of command being entered
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
 pub enum CommandType {
     /// Generic command starting with :
     Generic,
@@ -28,10 +27,6 @@ pub enum CommandType {
     Note,
     /// Edit selected link
     Edit,
-    /// Delete selected link
-    Delete,
-    /// Search all items
-    Search,
 }
 
 /// Which pane has focus
@@ -112,6 +107,21 @@ pub struct App {
     pub is_loading: bool,
     /// Scroll offset for detail pane
     pub detail_scroll: u16,
+    /// When the status message was set (for auto-dismiss)
+    pub status_message_time: Option<std::time::Instant>,
+    /// Whether help overlay is visible
+    pub show_help: bool,
+    /// Sync status indicator
+    pub sync_status: SyncIndicator,
+}
+
+/// Sync status indicator
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncIndicator {
+    /// Synced / up to date
+    Synced,
+    /// Sync disabled
+    Disabled,
 }
 
 impl App {
@@ -146,6 +156,13 @@ impl App {
             filter_text: String::new(),
             is_loading: false,
             detail_scroll: 0,
+            status_message_time: None,
+            show_help: false,
+            sync_status: if store.config().sync_enabled {
+                SyncIndicator::Synced
+            } else {
+                SyncIndicator::Disabled
+            },
         })
     }
 
@@ -176,6 +193,27 @@ impl App {
     /// Get the currently selected filter
     pub fn current_filter(&self) -> Option<&Filter> {
         self.filters.get(self.filter_index)
+    }
+
+    /// Set a status message (will auto-dismiss after 3 seconds)
+    pub fn set_status(&mut self, message: impl Into<String>) {
+        self.status_message = Some(message.into());
+        self.status_message_time = Some(std::time::Instant::now());
+    }
+
+    /// Check and clear expired status message
+    pub fn check_status_timeout(&mut self) {
+        if let Some(time) = self.status_message_time {
+            if time.elapsed() > std::time::Duration::from_secs(3) {
+                self.status_message = None;
+                self.status_message_time = None;
+            }
+        }
+    }
+
+    /// Toggle help overlay
+    pub fn toggle_help(&mut self) {
+        self.show_help = !self.show_help;
     }
 
     /// Get the currently selected link
@@ -253,10 +291,10 @@ impl App {
                     let title = link.title.clone();
                     match open_url(&url) {
                         Ok(_) => {
-                            self.status_message = Some(format!("Opened '{}'", title));
+                            self.set_status(format!("Opened '{}'", title));
                         }
                         Err(e) => {
-                            self.status_message = Some(format!("Failed to open: {}", e));
+                            self.set_status(format!("Failed to open: {}", e));
                         }
                     }
                 }
@@ -336,14 +374,12 @@ impl App {
                     self.command_cursor = 4;
                 }
             }
-            CommandType::Search => {
-                self.command_input = "search ".to_string();
-                self.command_cursor = 7;
-            }
             CommandType::Generic => {
                 // Just the colon prefix, user types command
             }
-            _ => {}
+            CommandType::Note | CommandType::Edit => {
+                // These go directly to editor, no pre-fill needed
+            }
         }
     }
 
@@ -443,7 +479,7 @@ impl App {
         if let Some(link) = self.current_link().cloned() {
             store.delete_link(link.id)?;
             self.deleted_link = Some(link.clone());
-            self.status_message = Some(format!("Deleted '{}'. Press u to undo", link.title));
+            self.set_status(format!("Deleted '{}'. Press u to undo", link.title));
             self.refresh(store)?;
         }
         Ok(())
@@ -453,10 +489,10 @@ impl App {
     pub fn undo_delete(&mut self, store: &mut Store) -> anyhow::Result<()> {
         if let Some(link) = self.deleted_link.take() {
             store.add_link(&link)?;
-            self.status_message = Some(format!("Restored '{}'", link.title));
+            self.set_status(format!("Restored '{}'", link.title));
             self.refresh(store)?;
         } else {
-            self.status_message = Some("Nothing to undo".to_string());
+            self.set_status("Nothing to undo".to_string());
         }
         Ok(())
     }
@@ -483,7 +519,7 @@ impl App {
         }
 
         store.add_link(&link)?;
-        self.status_message = Some(format!("Added '{}'", link.title));
+        self.set_status(format!("Added '{}'", link.title));
         self.refresh(store)?;
         Ok(())
     }
@@ -499,7 +535,7 @@ impl App {
                 .collect();
             updated_link.set_tags(tags);
             store.update_link(&updated_link)?;
-            self.status_message = Some("Tags updated".to_string());
+            self.set_status("Tags updated".to_string());
             self.refresh(store)?;
         }
         Ok(())
@@ -510,7 +546,7 @@ impl App {
         if let Some(link) = self.current_link() {
             let note = Note::new(body);
             store.add_note_to_link(link.id, &note)?;
-            self.status_message = Some("Note added".to_string());
+            self.set_status("Note added".to_string());
             self.refresh(store)?;
         }
         Ok(())
@@ -523,7 +559,7 @@ impl App {
         } else {
             self.links = store.search_links(query)?;
             self.link_index = 0;
-            self.status_message = Some(format!("Found {} results", self.links.len()));
+            self.set_status(format!("Found {} results", self.links.len()));
         }
         Ok(())
     }
@@ -536,7 +572,7 @@ impl App {
         if input.starts_with("add ") {
             let url = input.strip_prefix("add ").unwrap().trim();
             if url.is_empty() {
-                self.status_message = Some("Usage: add <url>".to_string());
+                self.set_status("Usage: add <url>".to_string());
                 return Ok(CommandResult::Done);
             }
             return Ok(CommandResult::NeedMetadata(url.to_string()));
@@ -553,7 +589,7 @@ impl App {
             let query = input.strip_prefix("search ").unwrap().trim();
             self.search(store, query)?;
         } else if !input.is_empty() {
-            self.status_message = Some(format!("Unknown command: {}", input));
+            self.set_status(format!("Unknown command: {}", input));
         }
 
         Ok(CommandResult::Done)
@@ -596,23 +632,23 @@ pub enum EditorTask {
 fn open_url(url: &str) -> std::io::Result<()> {
     #[cfg(target_os = "linux")]
     let mut cmd = Command::new("xdg-open");
-    
+
     #[cfg(target_os = "macos")]
     let mut cmd = Command::new("open");
-    
+
     #[cfg(target_os = "windows")]
     let mut cmd = {
         let mut c = Command::new("cmd");
         c.args(["/C", "start", ""]);
         c
     };
-    
+
     cmd.arg(url)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()?;
-    
+
     Ok(())
 }
 

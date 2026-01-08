@@ -8,7 +8,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{ActivePane, App, Filter, InputMode};
+use crate::app::{ActivePane, App, Filter, InputMode, SyncIndicator};
 
 /// Main UI rendering function
 pub fn draw(frame: &mut Frame, app: &App) {
@@ -33,11 +33,19 @@ pub fn draw(frame: &mut Frame, app: &App) {
     draw_items_pane(frame, app, pane_chunks[1]);
     draw_detail_pane(frame, app, pane_chunks[2]);
 
+    // Draw sync indicator in top-right corner
+    draw_sync_indicator(frame, app);
+
     // Draw status bar or command input
     match app.input_mode {
         InputMode::Normal => draw_status_bar(frame, app, outer_chunks[1]),
         InputMode::Command => draw_command_input(frame, app, outer_chunks[1]),
         InputMode::Filter => draw_filter_input(frame, app, outer_chunks[1]),
+    }
+
+    // Draw help overlay if visible
+    if app.show_help {
+        draw_help_overlay(frame);
     }
 }
 
@@ -354,4 +362,74 @@ fn draw_filter_input(frame: &mut Frame, app: &App, area: Rect) {
     // Position cursor
     let cursor_x = area.x + prefix.len() as u16 + app.command_cursor as u16;
     frame.set_cursor_position((cursor_x, area.y));
+}
+
+/// Draw sync indicator in top-right corner
+fn draw_sync_indicator(frame: &mut Frame, app: &App) {
+    let area = frame.area();
+    if area.width < 5 {
+        return;
+    }
+
+    let (icon, style) = match app.sync_status {
+        SyncIndicator::Synced => ("✓", Style::default().fg(Color::Green)),
+        SyncIndicator::Disabled => ("○", Style::default().add_modifier(Modifier::DIM)),
+    };
+
+    let indicator = Paragraph::new(Span::styled(icon, style));
+    let indicator_area = Rect::new(area.width - 2, 0, 1, 1);
+    frame.render_widget(indicator, indicator_area);
+}
+
+/// Draw help overlay
+fn draw_help_overlay(frame: &mut Frame) {
+    let area = frame.area();
+
+    // Calculate centered popup area
+    let popup_width = 50.min(area.width.saturating_sub(4));
+    let popup_height = 18.min(area.height.saturating_sub(4));
+    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
+    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+    // Clear the popup area
+    frame.render_widget(ratatui::widgets::Clear, popup_area);
+
+    let help_text = vec![
+        Line::from(vec![Span::styled(
+            "Keyboard Shortcuts",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(""),
+        Line::from("Navigation:"),
+        Line::from("  j/k, ↑/↓    Move up/down"),
+        Line::from("  h/l, ←/→    Switch panes"),
+        Line::from("  Tab         Cycle panes"),
+        Line::from("  Enter       Open link / Apply filter"),
+        Line::from(""),
+        Line::from("Commands:"),
+        Line::from("  a           Add link"),
+        Line::from("  t           Edit tags"),
+        Line::from("  n           Add note"),
+        Line::from("  e           Edit link"),
+        Line::from("  d           Delete link"),
+        Line::from("  u           Undo delete"),
+        Line::from(""),
+        Line::from("  /           Filter view"),
+        Line::from("  :           Command mode"),
+        Line::from("  q           Quit"),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "Press any key to close",
+            Style::default().add_modifier(Modifier::DIM),
+        )]),
+    ];
+
+    let block = Block::default()
+        .title(" Help ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().add_modifier(Modifier::BOLD));
+
+    let paragraph = Paragraph::new(help_text).block(block);
+    frame.render_widget(paragraph, popup_area);
 }

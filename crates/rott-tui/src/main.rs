@@ -73,6 +73,9 @@ fn main() -> Result<()> {
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App, store: &mut Store) -> Result<()> {
     loop {
+        // Check for status message timeout
+        app.check_status_timeout();
+
         // Draw UI
         terminal.draw(|frame| ui::draw(frame, app))?;
 
@@ -81,6 +84,12 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App, store: &mut St
             if let Event::Key(key) = event::read()? {
                 // Only handle key press events (not release)
                 if key.kind != KeyEventKind::Press {
+                    continue;
+                }
+
+                // If help is showing, any key dismisses it
+                if app.show_help {
+                    app.show_help = false;
                     continue;
                 }
 
@@ -212,8 +221,7 @@ fn handle_normal_mode(
 
         // Help
         KeyCode::Char('?') => {
-            app.status_message =
-                Some("a:add t:tag n:note e:edit d:del u:undo /:filter ::cmd q:quit".to_string());
+            app.toggle_help();
         }
 
         _ => {}
@@ -269,21 +277,22 @@ fn handle_command_mode<B: Backend>(
                                 .lines()
                                 .filter(|line| {
                                     let trimmed = line.trim();
-                                    !trimmed.starts_with('#') && trimmed != "Enter your note here..."
+                                    !trimmed.starts_with('#')
+                                        && trimmed != "Enter your note here..."
                                 })
                                 .collect::<Vec<_>>()
                                 .join("\n")
                                 .trim()
                                 .to_string();
-                            
+
                             // Re-enter TUI
                             enable_raw_mode()?;
                             stdout().execute(EnterAlternateScreen)?;
-                            
+
                             if !body.is_empty() {
                                 app.add_note_to_current(store, &body)?;
                             } else {
-                                app.status_message = Some("Note cancelled (empty)".to_string());
+                                app.set_status("Note cancelled (empty)".to_string());
                             }
                         }
                         EditorTask::EditLink => {
@@ -310,16 +319,16 @@ fn handle_command_mode<B: Backend>(
                                 // Parse edited content
                                 if let Some(updated) = parse_link_edit(&content, link) {
                                     store.update_link(&updated)?;
-                                    app.status_message = Some("Link updated".to_string());
+                                    app.set_status("Link updated".to_string());
                                     app.refresh(store)?;
                                 } else {
-                                    app.status_message = Some("Edit cancelled".to_string());
+                                    app.set_status("Edit cancelled".to_string());
                                 }
                             } else {
                                 // Re-enter TUI
                                 enable_raw_mode()?;
                                 stdout().execute(EnterAlternateScreen)?;
-                                app.status_message = Some("No link selected".to_string());
+                                app.set_status("No link selected".to_string());
                             }
                         }
                     }
