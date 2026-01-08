@@ -312,9 +312,12 @@ impl App {
 
         self.links = match filter {
             Some(Filter::Favorites) => {
-                // TODO: Get favorite tag from config
-                // For now, show all links
-                store.get_all_links()?
+                if let Some(tag) = &store.config().favorite_tag {
+                    store.get_links_by_tag(tag)?
+                } else {
+                    // No favorite tag configured, show empty
+                    Vec::new()
+                }
             }
             Some(Filter::Recent) => {
                 let mut links = store.get_all_links()?;

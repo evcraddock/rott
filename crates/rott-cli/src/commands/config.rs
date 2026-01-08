@@ -17,7 +17,8 @@ pub fn show(output: &Output) -> Result<()> {
                 serde_json::json!({
                     "data_dir": config.data_dir,
                     "sync_url": config.sync_url,
-                    "sync_enabled": config.sync_enabled
+                    "sync_enabled": config.sync_enabled,
+                    "favorite_tag": config.favorite_tag
                 })
             );
         }
@@ -32,6 +33,10 @@ pub fn show(output: &Output) -> Result<()> {
                 config.sync_url.as_deref().unwrap_or("(not set)")
             );
             println!("  sync_enabled: {}", config.sync_enabled);
+            println!(
+                "  favorite_tag: {}",
+                config.favorite_tag.as_deref().unwrap_or("(not set)")
+            );
             println!();
             println!("Config file: {}", Config::config_file_path().display());
         }
@@ -60,10 +65,17 @@ pub fn set(key: String, value: String, output: &Output) -> Result<()> {
                 .parse()
                 .context("Invalid value for sync_enabled. Use 'true' or 'false'.")?;
         }
+        "favorite_tag" => {
+            config.favorite_tag = if value.is_empty() || value == "none" {
+                None
+            } else {
+                Some(value.clone())
+            };
+        }
         _ => {
             bail!(
                 "Unknown configuration key: '{}'\n\
-                 Valid keys: data_dir, sync_url, sync_enabled",
+                 Valid keys: data_dir, sync_url, sync_enabled, favorite_tag",
                 key
             );
         }

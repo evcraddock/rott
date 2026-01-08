@@ -28,6 +28,10 @@ pub struct Config {
     /// Whether sync is enabled
     #[serde(default)]
     pub sync_enabled: bool,
+
+    /// Tag used for Favorites filter in TUI
+    #[serde(default)]
+    pub favorite_tag: Option<String>,
 }
 
 impl Default for Config {
@@ -36,6 +40,7 @@ impl Default for Config {
             data_dir: default_data_dir(),
             sync_url: None,
             sync_enabled: false,
+            favorite_tag: None,
         }
     }
 }
