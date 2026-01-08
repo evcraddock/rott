@@ -114,7 +114,7 @@ impl Store {
     ///
     /// This ID serves as the user's identity for sync purposes.
     pub fn root_id(&self) -> DocumentId {
-        tokio::task::block_in_place(|| self.doc.blocking_lock().id().clone())
+        tokio::task::block_in_place(|| *self.doc.blocking_lock().id())
     }
 
     /// Get the Automerge URL for the root document

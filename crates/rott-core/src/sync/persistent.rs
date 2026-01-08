@@ -272,26 +272,24 @@ async fn connect_and_sync(
             msg = read.next() => {
                 match msg {
                     Some(Ok(Message::Binary(data))) => {
-                        if let Ok(server_msg) = ServerMessage::decode(&data) {
-                            if let ServerMessage::Sync { data, .. } = server_msg {
-                                // Incoming sync from server
-                                let _ = status_tx.send(ConnectionStatus::Syncing);
-                                let _ = event_tx.send(SyncTaskEvent::StatusChanged(ConnectionStatus::Syncing)).await;
+                        if let Ok(ServerMessage::Sync { data, .. }) = ServerMessage::decode(&data) {
+                            // Incoming sync from server
+                            let _ = status_tx.send(ConnectionStatus::Syncing);
+                            let _ = event_tx.send(SyncTaskEvent::StatusChanged(ConnectionStatus::Syncing)).await;
 
-                                handle_incoming_sync(
-                                    peer_id,
-                                    &server_peer_id,
-                                    &config.doc_id,
-                                    &data,
-                                    doc,
-                                    sync_state,
-                                    &mut write,
-                                    event_tx,
-                                ).await?;
+                            handle_incoming_sync(
+                                peer_id,
+                                &server_peer_id,
+                                &config.doc_id,
+                                &data,
+                                doc,
+                                sync_state,
+                                &mut write,
+                                event_tx,
+                            ).await?;
 
-                                let _ = status_tx.send(ConnectionStatus::Connected);
-                                let _ = event_tx.send(SyncTaskEvent::StatusChanged(ConnectionStatus::Connected)).await;
-                            }
+                            let _ = status_tx.send(ConnectionStatus::Connected);
+                            let _ = event_tx.send(SyncTaskEvent::StatusChanged(ConnectionStatus::Connected)).await;
                         }
                     }
                     Some(Ok(Message::Close(_))) | None => {
