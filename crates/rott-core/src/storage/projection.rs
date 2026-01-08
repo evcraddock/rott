@@ -577,8 +577,12 @@ mod tests {
         let mut doc = RottDocument::new();
         let mut link = Link::new("https://test.com");
 
-        link.add_note(Note::new("No title"));
-        link.add_note(Note::with_title("Has Title", "With title"));
+        let note1 = Note::new("No title");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let note2 = Note::with_title("Has Title", "With title");
+
+        link.add_note(note1);
+        link.add_note(note2);
         let link_id = link.id;
         doc.add_link(&link).unwrap();
 

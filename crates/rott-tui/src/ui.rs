@@ -373,7 +373,10 @@ fn draw_sync_indicator(frame: &mut Frame, app: &App) {
 
     let (icon, style) = match app.sync_status {
         SyncIndicator::Synced => ("✓", Style::default().fg(Color::Green)),
+        SyncIndicator::Syncing => ("↻", Style::default().fg(Color::Yellow)),
+        SyncIndicator::Offline => ("⚡", Style::default().fg(Color::DarkGray)),
         SyncIndicator::Disabled => ("○", Style::default().add_modifier(Modifier::DIM)),
+        SyncIndicator::Error => ("✗", Style::default().fg(Color::Red)),
     };
 
     let indicator = Paragraph::new(Span::styled(icon, style));

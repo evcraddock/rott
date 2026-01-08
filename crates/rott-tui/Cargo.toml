@@ -21,6 +21,11 @@ tokio.workspace = true
 reqwest.workspace = true
 scraper.workspace = true
 uuid.workspace = true
+futures-util.workspace = true
+tokio-tungstenite.workspace = true
+ciborium.workspace = true
+serde.workspace = true
+serde_bytes.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

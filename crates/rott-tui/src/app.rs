@@ -118,10 +118,16 @@ pub struct App {
 /// Sync status indicator
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyncIndicator {
-    /// Synced / up to date
+    /// Connected and synced
     Synced,
-    /// Sync disabled
+    /// Sync in progress
+    Syncing,
+    /// Disconnected, will retry
+    Offline,
+    /// Sync not configured
     Disabled,
+    /// Sync error occurred
+    Error,
 }
 
 impl App {
@@ -159,7 +165,7 @@ impl App {
             status_message_time: None,
             show_help: false,
             sync_status: if store.config().sync_enabled {
-                SyncIndicator::Synced
+                SyncIndicator::Syncing
             } else {
                 SyncIndicator::Disabled
             },
@@ -480,10 +486,15 @@ impl App {
     /// Delete a link and store for undo
     pub fn delete_current_link(&mut self, store: &mut Store) -> anyhow::Result<()> {
         if let Some(link) = self.current_link().cloned() {
+            let saved_index = self.link_index;
             store.delete_link(link.id)?;
             self.deleted_link = Some(link.clone());
             self.set_status(format!("Deleted '{}'. Press u to undo", link.title));
             self.refresh(store)?;
+            // Restore index, clamped to new list bounds
+            if !self.links.is_empty() {
+                self.link_index = saved_index.min(self.links.len() - 1);
+            }
         }
         Ok(())
     }

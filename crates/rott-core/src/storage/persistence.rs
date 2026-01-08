@@ -366,6 +366,7 @@ mod tests {
             data_dir: temp_dir.path().to_path_buf(),
             sync_url: None,
             sync_enabled: false,
+            favorite_tag: None,
         }
     }
 
@@ -637,6 +638,7 @@ mod tests {
             data_dir: nested_dir.clone(),
             sync_url: None,
             sync_enabled: false,
+            favorite_tag: None,
         };
         let persistence = AutomergePersistence::new(config);
 

@@ -251,6 +251,7 @@ mod tests {
             data_dir: PathBuf::from("/data/rott"),
             sync_url: Some("ws://sync.example.com".to_string()),
             sync_enabled: true,
+            favorite_tag: None,
         };
 
         let toml_str = toml::to_string_pretty(&config).unwrap();

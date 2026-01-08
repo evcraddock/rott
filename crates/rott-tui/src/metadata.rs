@@ -9,23 +9,23 @@ use std::time::Duration;
 /// Fetch timeout in seconds
 const FETCH_TIMEOUT: u64 = 10;
 
-/// Fetch metadata from a URL (blocking version for TUI)
+/// Fetch metadata from a URL (async version)
 ///
 /// Returns None on failure (graceful degradation).
-pub fn fetch_metadata_blocking(url: &str) -> Option<UrlMetadata> {
-    let client = reqwest::blocking::Client::builder()
+pub async fn fetch_metadata(url: &str) -> Option<UrlMetadata> {
+    let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(FETCH_TIMEOUT))
         .user_agent("Mozilla/5.0 (compatible; ROTT/1.0)")
         .build()
         .ok()?;
 
-    let response = client.get(url).send().ok()?;
+    let response = client.get(url).send().await.ok()?;
 
     if !response.status().is_success() {
         return None;
     }
 
-    let html = response.text().ok()?;
+    let html = response.text().await.ok()?;
     Some(parse_metadata(&html))
 }
 

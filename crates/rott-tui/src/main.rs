@@ -31,6 +31,7 @@
 mod app;
 mod editor;
 mod metadata;
+mod sync;
 mod ui;
 
 use anyhow::Result;
@@ -44,11 +45,14 @@ use ratatui::prelude::*;
 use rott_core::Store;
 use std::io::stdout;
 
-use app::{App, CommandResult, CommandType, EditorTask, InputMode};
+use app::{App, CommandResult, CommandType, EditorTask, InputMode, SyncIndicator};
+use sync::{SyncCommand, SyncEvent, SyncHandle};
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     // Open the store
     let mut store = Store::open()?;
+    let config = store.config().clone();
 
     // Setup terminal
     enable_raw_mode()?;
@@ -58,11 +62,26 @@ fn main() -> Result<()> {
     // Create app
     let mut app = App::new(&store)?;
 
+    // Start sync if enabled
+    let sync_handle = if sync::is_sync_enabled(&config) {
+        app.sync_status = SyncIndicator::Syncing;
+        terminal.draw(|frame| ui::draw(frame, &app))?;
+
+        // Initial sync to get latest data
+        app.sync_status = sync::do_sync(&mut store).await;
+        app.refresh(&store)?;
+
+        // Spawn periodic sync poller (checks for remote changes every 5 seconds)
+        Some(sync::spawn_sync_poller(5))
+    } else {
+        None
+    };
+
     // Apply initial filter (Recent)
     app.apply_filter(&store)?;
 
     // Run app
-    let result = run_app(&mut terminal, &mut app, &mut store);
+    let result = run_app(&mut terminal, &mut app, &mut store, sync_handle).await;
 
     // Restore terminal
     disable_raw_mode()?;
@@ -71,7 +90,15 @@ fn main() -> Result<()> {
     result
 }
 
-fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App, store: &mut Store) -> Result<()> {
+async fn run_app<B: Backend>(
+    terminal: &mut Terminal<B>,
+    app: &mut App,
+    store: &mut Store,
+    mut sync_handle: Option<SyncHandle>,
+) -> Result<()> {
+    // Track if we need to sync after this iteration
+    let mut pending_sync = false;
+
     loop {
         // Check for status message timeout
         app.check_status_timeout();
@@ -79,32 +106,105 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App, store: &mut St
         // Draw UI
         terminal.draw(|frame| ui::draw(frame, app))?;
 
-        // Handle events
-        if event::poll(std::time::Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
-                // Only handle key press events (not release)
-                if key.kind != KeyEventKind::Press {
-                    continue;
-                }
+        // Handle events with a short timeout
+        tokio::select! {
+            biased;
 
-                // If help is showing, any key dismisses it
-                if app.show_help {
-                    app.show_help = false;
-                    continue;
+            // Check for sync events (if sync is enabled)
+            sync_event = async {
+                if let Some(ref mut handle) = sync_handle {
+                    handle.event_rx.recv().await
+                } else {
+                    // Never resolves if no sync handle
+                    std::future::pending::<Option<SyncEvent>>().await
                 }
+            } => {
+                if let Some(event) = sync_event {
+                    match event {
+                        SyncEvent::Connected => {
+                            if app.sync_status != SyncIndicator::Syncing {
+                                app.sync_status = SyncIndicator::Synced;
+                            }
+                        }
+                        SyncEvent::Disconnected => {
+                            app.sync_status = SyncIndicator::Offline;
+                        }
+                        SyncEvent::RemoteChanges => {
+                            // Poll triggered - sync to check for remote changes
+                            app.sync_status = SyncIndicator::Syncing;
+                            terminal.draw(|frame| ui::draw(frame, app))?;
 
-                // Handle based on input mode
-                match app.input_mode {
-                    InputMode::Normal => handle_normal_mode(app, store, key.code, key.modifiers)?,
-                    InputMode::Command => {
-                        handle_command_mode(terminal, app, store, key.code, key.modifiers)?
+                            app.sync_status = sync::do_sync(store).await;
+                            app.refresh(store)?;
+                        }
+                        SyncEvent::Error(msg) => {
+                            app.set_status(format!("Sync error: {}", msg));
+                            app.sync_status = SyncIndicator::Error;
+                        }
                     }
-                    InputMode::Filter => handle_filter_mode(app, store, key.code)?,
+                }
+            }
+
+            // Poll for terminal events
+            _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {
+                // Do pending sync if needed
+                if pending_sync && sync::is_sync_enabled(store.config()) {
+                    pending_sync = false;
+                    let prev_status = app.sync_status;
+                    app.sync_status = SyncIndicator::Syncing;
+                    terminal.draw(|frame| ui::draw(frame, app))?;
+
+                    app.sync_status = sync::do_sync(store).await;
+                    app.refresh(store)?; // Refresh UI after sync!
+
+                    // If sync failed but we were connected, show offline
+                    if app.sync_status == SyncIndicator::Offline && prev_status == SyncIndicator::Synced {
+                        // Keep offline status
+                    }
+                }
+
+                // Check for terminal events (non-blocking)
+                if event::poll(std::time::Duration::from_millis(0))? {
+                    if let Event::Key(key) = event::read()? {
+                        // Only handle key press events (not release)
+                        if key.kind != KeyEventKind::Press {
+                            continue;
+                        }
+
+                        // If help is showing, any key dismisses it
+                        if app.show_help {
+                            app.show_help = false;
+                            continue;
+                        }
+
+                        // Handle based on input mode
+                        match app.input_mode {
+                            InputMode::Normal => {
+                                if let Some(needs_sync) = handle_normal_mode(app, store, key.code, key.modifiers).await? {
+                                    if needs_sync {
+                                        pending_sync = true;
+                                    }
+                                }
+                            }
+                            InputMode::Command => {
+                                if let Some(needs_sync) = handle_command_mode(terminal, app, store, key.code, key.modifiers).await? {
+                                    if needs_sync {
+                                        pending_sync = true;
+                                    }
+                                }
+                            }
+                            InputMode::Filter => handle_filter_mode(app, store, key.code)?,
+                        }
+                    }
                 }
             }
         }
 
         if app.should_quit {
+            // Shutdown sync task
+            if let Some(handle) = sync_handle.take() {
+                let _ = handle.command_tx.send(SyncCommand::Shutdown).await;
+            }
             break;
         }
     }
@@ -113,12 +213,13 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App, store: &mut St
 }
 
 /// Handle key events in normal mode
-fn handle_normal_mode(
+/// Returns Some(true) if a sync is needed, Some(false) if not, None for no action
+async fn handle_normal_mode(
     app: &mut App,
     store: &mut Store,
     code: KeyCode,
     modifiers: KeyModifiers,
-) -> Result<()> {
+) -> Result<Option<bool>> {
     // Clear status message on navigation keys
     match code {
         KeyCode::Char('j')
@@ -204,9 +305,11 @@ fn handle_normal_mode(
         }
         KeyCode::Char('d') => {
             app.delete_current_link(store)?;
+            return Ok(Some(true)); // Needs sync
         }
         KeyCode::Char('u') => {
             app.undo_delete(store)?;
+            return Ok(Some(true)); // Needs sync
         }
 
         // Filter mode
@@ -224,20 +327,26 @@ fn handle_normal_mode(
             app.toggle_help();
         }
 
+        // Manual sync
+        KeyCode::Char('s') if modifiers.contains(KeyModifiers::CONTROL) => {
+            return Ok(Some(true)); // Trigger sync
+        }
+
         _ => {}
     }
 
-    Ok(())
+    Ok(Some(false))
 }
 
 /// Handle key events in command mode
-fn handle_command_mode<B: Backend>(
+/// Returns Some(true) if a sync is needed
+async fn handle_command_mode<B: Backend>(
     terminal: &mut Terminal<B>,
     app: &mut App,
     store: &mut Store,
     code: KeyCode,
     modifiers: KeyModifiers,
-) -> Result<()> {
+) -> Result<Option<bool>> {
     match code {
         // Cancel command
         KeyCode::Esc => {
@@ -255,13 +364,15 @@ fn handle_command_mode<B: Backend>(
             match result {
                 CommandResult::Done => {}
                 CommandResult::NeedMetadata(url) => {
-                    // Fetch metadata synchronously (we'll show "Adding..." in UI)
+                    // Fetch metadata asynchronously
                     app.is_loading = true;
                     terminal.draw(|frame| ui::draw(frame, app))?;
 
-                    let metadata = metadata::fetch_metadata_blocking(&url);
+                    let metadata = metadata::fetch_metadata(&url).await;
                     app.add_link(store, &url, metadata)?;
                     app.is_loading = false;
+
+                    return Ok(Some(true)); // Needs sync
                 }
                 CommandResult::NeedEditor(task) => {
                     // Exit TUI temporarily for editor
@@ -269,10 +380,11 @@ fn handle_command_mode<B: Backend>(
                     stdout().execute(LeaveAlternateScreen)?;
                     stdout().execute(cursor::Show)?;
 
+                    let mut needs_sync = false;
+
                     match task {
                         EditorTask::Note => {
                             let content = editor::edit_text("# Note\n\nEnter your note here...")?;
-                            // Remove template lines and extract actual note content
                             let body: String = content
                                 .lines()
                                 .filter(|line| {
@@ -285,14 +397,13 @@ fn handle_command_mode<B: Backend>(
                                 .trim()
                                 .to_string();
 
-                            // Re-enter TUI
                             enable_raw_mode()?;
                             stdout().execute(EnterAlternateScreen)?;
-                            // Force terminal to redraw completely
                             terminal.clear()?;
 
                             if !body.is_empty() {
                                 app.add_note_to_current(store, &body)?;
+                                needs_sync = true;
                             } else {
                                 app.set_status("Note cancelled (empty)".to_string());
                             }
@@ -314,21 +425,19 @@ fn handle_command_mode<B: Backend>(
 
                                 let content = editor::edit_text(&template)?;
 
-                                // Re-enter TUI
                                 enable_raw_mode()?;
                                 stdout().execute(EnterAlternateScreen)?;
                                 terminal.clear()?;
 
-                                // Parse edited content
                                 if let Some(updated) = parse_link_edit(&content, link) {
                                     store.update_link(&updated)?;
                                     app.set_status("Link updated".to_string());
                                     app.refresh(store)?;
+                                    needs_sync = true;
                                 } else {
                                     app.set_status("Edit cancelled".to_string());
                                 }
                             } else {
-                                // Re-enter TUI
                                 enable_raw_mode()?;
                                 stdout().execute(EnterAlternateScreen)?;
                                 terminal.clear()?;
@@ -336,6 +445,8 @@ fn handle_command_mode<B: Backend>(
                             }
                         }
                     }
+
+                    return Ok(Some(needs_sync));
                 }
             }
         }
@@ -357,7 +468,7 @@ fn handle_command_mode<B: Backend>(
         _ => {}
     }
 
-    Ok(())
+    Ok(Some(false))
 }
 
 /// Handle key events in filter mode
@@ -372,7 +483,6 @@ fn handle_filter_mode(app: &mut App, store: &Store, code: KeyCode) -> Result<()>
         // Confirm filter (stay in filtered view)
         KeyCode::Enter => {
             app.exit_input_mode();
-            // Keep the filtered results
         }
 
         // Text input
@@ -403,7 +513,6 @@ fn parse_link_edit(content: &str, original: &rott_core::Link) -> Option<rott_cor
     for line in content.lines() {
         let line = line.trim();
 
-        // Skip comments and empty lines
         if line.starts_with('#') || line.is_empty() {
             continue;
         }
@@ -436,7 +545,6 @@ fn parse_link_edit(content: &str, original: &rott_core::Link) -> Option<rott_cor
                 changed = true;
             }
         }
-        // Note: URL is intentionally not editable
     }
 
     if changed {
