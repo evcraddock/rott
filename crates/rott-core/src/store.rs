@@ -271,10 +271,23 @@ impl Store {
 
     /// Save the document and update SQLite projection
     ///
-    /// Call this after making direct modifications to the document.
+    /// This first merges any external changes from disk (e.g., from CLI
+    /// while TUI is running), then saves the merged document.
     pub fn save_and_project(&mut self) -> Result<()> {
         tokio::task::block_in_place(|| {
             let mut doc = self.doc.blocking_lock();
+
+            // First, merge any external changes from disk
+            if let Some(mut disk_doc) = self
+                .persistence
+                .load()
+                .context("Failed to load document from disk")?
+            {
+                doc.merge(&mut disk_doc)
+                    .context("Failed to merge document changes")?;
+            }
+
+            // Now save the merged document
             self.persistence
                 .save(&mut doc)
                 .context("Failed to save document")?;
@@ -293,6 +306,26 @@ impl Store {
             self.projection
                 .project_full(&doc)
                 .context("Failed to rebuild projection")
+        })
+    }
+
+    /// Reload document from disk and merge any external changes
+    ///
+    /// This is useful when running as a long-lived process (like the TUI)
+    /// to pick up changes made by other processes (like the CLI).
+    /// Automerge handles the merge automatically using CRDTs.
+    pub fn reload_and_merge(&mut self) -> Result<()> {
+        tokio::task::block_in_place(|| {
+            if let Some(mut disk_doc) = self
+                .persistence
+                .load()
+                .context("Failed to load document from disk")?
+            {
+                let mut doc = self.doc.blocking_lock();
+                doc.merge(&mut disk_doc)
+                    .context("Failed to merge document changes")?;
+            }
+            Ok(())
         })
     }
 
