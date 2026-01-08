@@ -178,7 +178,10 @@ mod tests {
         // Second init should fail
         let result = identity.initialize_new();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Already initialized"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Already initialized"));
     }
 
     #[test]
@@ -209,7 +212,10 @@ mod tests {
         let join_id = DocumentId::new();
         let result = identity.initialize_join(join_id);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Already initialized"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Already initialized"));
     }
 
     #[test]

@@ -281,14 +281,34 @@ mod tests {
 
     #[test]
     fn test_load_from_path_missing_file() {
+        // Save current env vars
+        let saved_sync_url = std::env::var("ROTT_SYNC_URL").ok();
+        let saved_sync_enabled = std::env::var("ROTT_SYNC_ENABLED").ok();
+        let saved_data_dir = std::env::var("ROTT_DATA_DIR").ok();
+
         // Clear environment variables that could override defaults
         std::env::remove_var("ROTT_SYNC_URL");
         std::env::remove_var("ROTT_SYNC_ENABLED");
+        std::env::remove_var("ROTT_DATA_DIR");
 
         let path = PathBuf::from("/nonexistent/config.toml");
         let config = Config::load_from_path(&path).unwrap();
         // Should return defaults when file doesn't exist
         assert!(!config.sync_enabled);
         assert!(config.sync_url.is_none());
+
+        // Restore env vars
+        match saved_sync_url {
+            Some(v) => std::env::set_var("ROTT_SYNC_URL", v),
+            None => std::env::remove_var("ROTT_SYNC_URL"),
+        }
+        match saved_sync_enabled {
+            Some(v) => std::env::set_var("ROTT_SYNC_ENABLED", v),
+            None => std::env::remove_var("ROTT_SYNC_ENABLED"),
+        }
+        match saved_data_dir {
+            Some(v) => std::env::set_var("ROTT_DATA_DIR", v),
+            None => std::env::remove_var("ROTT_DATA_DIR"),
+        }
     }
 }

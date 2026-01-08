@@ -1,0 +1,22 @@
+#!/bin/sh
+# Pre-commit hook: run formatting and lint checks
+
+set -e
+
+echo "Running cargo fmt..."
+cargo fmt --check
+if [ $? -ne 0 ]; then
+    echo ""
+    echo "ERROR: Code is not formatted. Run 'cargo fmt' and try again."
+    exit 1
+fi
+
+echo "Running cargo clippy..."
+cargo clippy -- -D warnings -A clippy::too_many_arguments
+if [ $? -ne 0 ]; then
+    echo ""
+    echo "ERROR: Clippy found issues. Fix them and try again."
+    exit 1
+fi
+
+echo "Pre-commit checks passed!"

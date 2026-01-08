@@ -233,8 +233,8 @@ async fn main() -> Result<()> {
     }
 
     let result = match cli.command.unwrap() {
-        Commands::Tui => unreachable!(), // Handled above
-        Commands::Init { .. } => unreachable!(), // Handled above
+        Commands::Tui => unreachable!(),           // Handled above
+        Commands::Init { .. } => unreachable!(),   // Handled above
         Commands::Device { .. } => unreachable!(), // Handled above
         Commands::Link { command } => handle_link_command(command, &mut store, &output).await,
         Commands::Tags => commands::tag::list(&store, &output),
