@@ -166,6 +166,44 @@ fn default_data_dir() -> PathBuf {
 mod tests {
     use super::*;
     use std::env;
+    use std::sync::Mutex;
+
+    // Mutex to serialize tests that touch environment variables
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    /// Guard that locks env access and saves/restores env vars
+    struct EnvGuard<'a> {
+        _lock: std::sync::MutexGuard<'a, ()>,
+        saved: Vec<(String, Option<String>)>,
+    }
+
+    impl<'a> EnvGuard<'a> {
+        fn new(vars: &[&str]) -> Self {
+            let lock = ENV_MUTEX.lock().unwrap();
+            let saved = vars
+                .iter()
+                .map(|&name| (name.to_string(), env::var(name).ok()))
+                .collect();
+            // Clear all the vars
+            for name in vars {
+                env::remove_var(name);
+            }
+            Self { _lock: lock, saved }
+        }
+    }
+
+    impl Drop for EnvGuard<'_> {
+        fn drop(&mut self) {
+            for (name, value) in &self.saved {
+                match value {
+                    Some(v) => env::set_var(name, v),
+                    None => env::remove_var(name),
+                }
+            }
+        }
+    }
+
+    const ENV_VARS: &[&str] = &["ROTT_DATA_DIR", "ROTT_SYNC_URL", "ROTT_SYNC_ENABLED"];
 
     #[test]
     fn test_default_config() {
@@ -191,22 +229,20 @@ mod tests {
 
     #[test]
     fn test_env_override_data_dir() {
-        let mut config = Config::default();
-        let original = config.data_dir.clone();
+        let _guard = EnvGuard::new(ENV_VARS);
 
-        // Set env var
+        let mut config = Config::default();
+
         env::set_var("ROTT_DATA_DIR", "/tmp/rott-test");
         config.apply_env_overrides();
 
         assert_eq!(config.data_dir, PathBuf::from("/tmp/rott-test"));
-
-        // Cleanup
-        env::remove_var("ROTT_DATA_DIR");
-        config.data_dir = original;
     }
 
     #[test]
     fn test_env_override_sync_enabled() {
+        let _guard = EnvGuard::new(ENV_VARS);
+
         let mut config = Config::default();
         assert!(!config.sync_enabled);
 
@@ -222,13 +258,12 @@ mod tests {
         env::set_var("ROTT_SYNC_ENABLED", "false");
         config.apply_env_overrides();
         assert!(!config.sync_enabled);
-
-        // Cleanup
-        env::remove_var("ROTT_SYNC_ENABLED");
     }
 
     #[test]
     fn test_env_override_sync_url() {
+        let _guard = EnvGuard::new(ENV_VARS);
+
         let mut config = Config::default();
         assert!(config.sync_url.is_none());
 
@@ -240,13 +275,12 @@ mod tests {
         env::set_var("ROTT_SYNC_URL", "");
         config.apply_env_overrides();
         assert!(config.sync_url.is_none());
-
-        // Cleanup
-        env::remove_var("ROTT_SYNC_URL");
     }
 
     #[test]
     fn test_serialization() {
+        let _guard = EnvGuard::new(ENV_VARS);
+
         let config = Config {
             data_dir: PathBuf::from("/data/rott"),
             sync_url: Some("ws://sync.example.com".to_string()),
@@ -267,6 +301,8 @@ mod tests {
 
     #[test]
     fn test_load_from_str() {
+        let _guard = EnvGuard::new(ENV_VARS);
+
         let toml = r#"
             data_dir = "/custom/data"
             sync_url = "ws://example.com"
@@ -281,34 +317,12 @@ mod tests {
 
     #[test]
     fn test_load_from_path_missing_file() {
-        // Save current env vars
-        let saved_sync_url = std::env::var("ROTT_SYNC_URL").ok();
-        let saved_sync_enabled = std::env::var("ROTT_SYNC_ENABLED").ok();
-        let saved_data_dir = std::env::var("ROTT_DATA_DIR").ok();
-
-        // Clear environment variables that could override defaults
-        std::env::remove_var("ROTT_SYNC_URL");
-        std::env::remove_var("ROTT_SYNC_ENABLED");
-        std::env::remove_var("ROTT_DATA_DIR");
+        let _guard = EnvGuard::new(ENV_VARS);
 
         let path = PathBuf::from("/nonexistent/config.toml");
         let config = Config::load_from_path(&path).unwrap();
         // Should return defaults when file doesn't exist
         assert!(!config.sync_enabled);
         assert!(config.sync_url.is_none());
-
-        // Restore env vars
-        match saved_sync_url {
-            Some(v) => std::env::set_var("ROTT_SYNC_URL", v),
-            None => std::env::remove_var("ROTT_SYNC_URL"),
-        }
-        match saved_sync_enabled {
-            Some(v) => std::env::set_var("ROTT_SYNC_ENABLED", v),
-            None => std::env::remove_var("ROTT_SYNC_ENABLED"),
-        }
-        match saved_data_dir {
-            Some(v) => std::env::set_var("ROTT_DATA_DIR", v),
-            None => std::env::remove_var("ROTT_DATA_DIR"),
-        }
     }
 }

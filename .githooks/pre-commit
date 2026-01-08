@@ -1,5 +1,5 @@
 #!/bin/sh
-# Pre-commit hook: run formatting and lint checks
+# Pre-commit hook: run formatting, lint, and tests
 
 set -e
 
@@ -16,6 +16,14 @@ cargo clippy -- -D warnings -A clippy::too_many_arguments
 if [ $? -ne 0 ]; then
     echo ""
     echo "ERROR: Clippy found issues. Fix them and try again."
+    exit 1
+fi
+
+echo "Running cargo test..."
+cargo test
+if [ $? -ne 0 ]; then
+    echo ""
+    echo "ERROR: Tests failed. Fix them and try again."
     exit 1
 fi
 
