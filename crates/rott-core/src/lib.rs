@@ -36,6 +36,7 @@
 pub mod config;
 pub mod document;
 pub mod document_id;
+pub mod identity;
 pub mod models;
 pub mod storage;
 pub mod store;
@@ -44,6 +45,7 @@ pub mod sync;
 pub use config::Config;
 pub use document::{DocumentError, RottDocument};
 pub use document_id::{DocumentId, DocumentIdError};
+pub use identity::{Identity, InitResult};
 pub use models::{Link, Note, Tag};
 pub use storage::{AutomergePersistence, SqliteProjection, StorageError, StorageStats};
 pub use store::Store;

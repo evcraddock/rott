@@ -47,6 +47,11 @@ impl Output {
         matches!(self.format, OutputFormat::Quiet)
     }
 
+    /// Check if output is in JSON mode
+    pub fn is_json(&self) -> bool {
+        matches!(self.format, OutputFormat::Json)
+    }
+
     /// Print a single link (with notes summary)
     pub fn print_link(&self, link: &Link) {
         match self.format {
