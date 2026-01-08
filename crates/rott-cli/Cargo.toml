@@ -1,0 +1,36 @@
+[package]
+name = "rott-cli"
+description = "Command-line interface for ROTT"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "rott"
+path = "src/main.rs"
+
+[dependencies]
+rott-core.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+reqwest.workspace = true
+scraper.workspace = true
+tokio.workspace = true
+atty = "0.2"
+uuid = { workspace = true }
+
+# TUI dependencies
+ratatui.workspace = true
+crossterm.workspace = true
+chrono.workspace = true
+open.workspace = true
+futures-util.workspace = true
+tokio-tungstenite.workspace = true
+ciborium.workspace = true
+serde_bytes.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
