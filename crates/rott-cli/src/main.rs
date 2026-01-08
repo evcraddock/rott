@@ -202,6 +202,25 @@ async fn main() -> Result<()> {
         return handle_device_command(command.clone(), &output);
     }
 
+    // Check for pending sync state (joined but not yet synced)
+    // Sync command should work in this state to perform initial sync
+    if identity.is_pending_sync()? {
+        if matches!(&cli.command, Some(Commands::Sync)) {
+            let config = Config::load()?;
+            return commands::sync::initial_sync(&config, &output).await;
+        } else {
+            anyhow::bail!(
+                "Sync required. You've joined an existing identity but haven't synced yet.\n\
+                 \n\
+                 To complete setup, run: rott sync\n\
+                 \n\
+                 Make sure sync is configured:\n\
+                   rott config set sync_url ws://your-server:3030\n\
+                   rott config set sync_enabled true"
+            );
+        }
+    }
+
     // Open store for commands that need it
     let mut store = Store::open()?;
 

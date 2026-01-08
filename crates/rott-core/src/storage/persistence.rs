@@ -112,7 +112,7 @@ impl AutomergePersistence {
     ///
     /// This provides a quick way to get the document ID without loading
     /// the entire Automerge document.
-    fn save_root_doc_id(&self, id: &DocumentId) -> Result<()> {
+    pub fn save_root_doc_id(&self, id: &DocumentId) -> Result<()> {
         let path = self.config.root_doc_id_path();
         let content = id.to_bs58check();
 
@@ -120,6 +120,22 @@ impl AutomergePersistence {
             .with_context(|| format!("Failed to save root doc ID to {:?}", path))?;
 
         Ok(())
+    }
+
+    /// Check if we're in "pending sync" state
+    ///
+    /// This occurs when the user has joined an existing identity but
+    /// hasn't synced yet. We have the root document ID but no local
+    /// Automerge document.
+    pub fn is_pending_sync(&self) -> Result<bool> {
+        let has_id = self.load_root_doc_id()?.is_some();
+        let has_doc = self.exists();
+        Ok(has_id && !has_doc)
+    }
+
+    /// Check if we have a root document ID (either from new or join)
+    pub fn has_identity(&self) -> Result<bool> {
+        Ok(self.load_root_doc_id()?.is_some())
     }
 
     /// Load the root document ID from disk

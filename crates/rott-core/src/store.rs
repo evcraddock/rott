@@ -37,6 +37,7 @@ use crate::document::RottDocument;
 use crate::document_id::DocumentId;
 use crate::models::{Link, Note};
 use crate::storage::{AutomergePersistence, SqliteProjection, StorageStats};
+use crate::sync::{SyncClient, SyncState};
 
 /// Unified storage interface for ROTT
 ///
@@ -69,6 +70,9 @@ impl Store {
     }
 
     /// Open the store with a specific configuration
+    ///
+    /// Returns an error if in "pending sync" state (joined but not yet synced).
+    /// Use `Store::is_pending_sync()` to check this state before opening.
     pub fn open_with_config(config: Config) -> Result<Self> {
         let persistence = AutomergePersistence::new(config.clone());
 
@@ -76,6 +80,20 @@ impl Store {
         persistence
             .validate_storage()
             .context("Storage validation failed")?;
+
+        // Check for pending sync state (joined but no local document)
+        if persistence.is_pending_sync()? {
+            anyhow::bail!(
+                "Sync required. You've joined an existing identity but haven't synced yet.\n\
+                 \n\
+                 To complete setup:\n\
+                 1. Configure sync server: rott config set sync_url ws://your-server:3030\n\
+                 2. Enable sync: rott config set sync_enabled true\n\
+                 3. Run sync: rott sync\n\
+                 \n\
+                 After syncing, your data will be available."
+            );
+        }
 
         let mut projection =
             SqliteProjection::open(&config).context("Failed to open SQLite database")?;
@@ -103,6 +121,92 @@ impl Store {
             projection,
             config,
         })
+    }
+
+    /// Check if in pending sync state (joined but not yet synced)
+    ///
+    /// Use this before `open()` to provide better error messages.
+    pub fn is_pending_sync() -> Result<bool> {
+        let config = Config::load().context("Failed to load configuration")?;
+        Self::is_pending_sync_with_config(&config)
+    }
+
+    /// Check if in pending sync state with specific config
+    pub fn is_pending_sync_with_config(config: &Config) -> Result<bool> {
+        let persistence = AutomergePersistence::new(config.clone());
+        persistence.is_pending_sync()
+    }
+
+    /// Perform initial sync for pending sync state
+    ///
+    /// This is used after `rott init --join` to pull the document from
+    /// the sync server. Cannot be called on an already-opened store.
+    ///
+    /// After successful sync, `Store::open()` will work normally.
+    pub async fn initial_sync(config: &Config) -> Result<()> {
+        let persistence = AutomergePersistence::new(config.clone());
+
+        // Verify we're in pending sync state
+        if !persistence.is_pending_sync()? {
+            if persistence.exists() {
+                anyhow::bail!("Not in pending sync state - document already exists locally");
+            } else {
+                anyhow::bail!("Not initialized. Run `rott init` first.");
+            }
+        }
+
+        // Get the root document ID
+        let root_id = persistence
+            .load_root_doc_id()?
+            .context("No root document ID found")?;
+
+        // Check sync is configured
+        let sync_url = config.sync_url.as_ref().context(
+            "Sync URL not configured. Set it with: rott config set sync_url ws://your-server:3030",
+        )?;
+
+        if !config.sync_enabled {
+            anyhow::bail!("Sync not enabled. Enable it with: rott config set sync_enabled true");
+        }
+
+        // Create an empty document for receiving sync data
+        let mut doc = RottDocument::empty_for_sync(root_id);
+
+        // Create sync client and sync state
+        let sync_state_path = config.data_dir.join("sync_state.json");
+        let sync_state = SyncState::with_path(sync_state_path).unwrap_or_else(|_| SyncState::new());
+        let client = SyncClient::new(sync_url, root_id).with_sync_state(sync_state);
+
+        // Perform sync
+        let updated = client.sync_once(&mut doc).await?;
+
+        if !updated {
+            anyhow::bail!(
+                "No data received from sync server. The document may not exist on the server, \
+                 or the document ID may be incorrect."
+            );
+        }
+
+        // Verify we received a valid document with the expected ID
+        // The document should now contain the root_doc_id field from the server
+        let received_bytes = doc.save();
+        let loaded_doc = RottDocument::load(&received_bytes)
+            .context("Received invalid document from sync server")?;
+
+        if loaded_doc.id() != &root_id {
+            anyhow::bail!(
+                "Document ID mismatch. Expected {}, but received document has ID {}",
+                root_id,
+                loaded_doc.id()
+            );
+        }
+
+        // Save the document
+        persistence
+            .save(&mut doc)
+            .context("Failed to save synced document")?;
+
+        Ok(())
     }
 
     /// Get a clone of the shared document handle (for sync)

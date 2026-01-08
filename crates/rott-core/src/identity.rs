@@ -46,9 +46,25 @@ impl Identity {
         }
     }
 
-    /// Check if ROTT has been initialized (has a root document)
+    /// Check if ROTT has been initialized (has a root document ID)
+    ///
+    /// Note: This returns true even if in "pending sync" state (has ID but no document).
+    /// Use `is_pending_sync()` to check if sync is required.
     pub fn is_initialized(&self) -> bool {
+        self.persistence.has_identity().unwrap_or(false)
+    }
+
+    /// Check if we have a local document (fully initialized, not pending sync)
+    pub fn has_local_document(&self) -> bool {
         self.persistence.exists()
+    }
+
+    /// Check if we're in "pending sync" state
+    ///
+    /// This occurs after `rott init --join` when we have the ID but haven't
+    /// synced the actual document from the server yet.
+    pub fn is_pending_sync(&self) -> Result<bool> {
+        self.persistence.is_pending_sync()
     }
 
     /// Get the root document ID if initialized
@@ -100,7 +116,12 @@ impl Identity {
     /// Initialize by joining an existing identity
     ///
     /// Stores the provided root document ID for later sync.
-    /// The actual document will be synced when a sync server is configured.
+    /// Does NOT create a local Automerge document - that will be pulled
+    /// from the sync server on first sync.
+    ///
+    /// After calling this, the device is in "pending sync" state until
+    /// sync completes successfully.
+    ///
     /// Returns an error if already initialized.
     pub fn initialize_join(&self, root_id: DocumentId) -> Result<InitResult> {
         if self.is_initialized() {
@@ -114,15 +135,11 @@ impl Identity {
             .validate_storage()
             .context("Storage validation failed")?;
 
-        // Create a document with the provided ID
-        // Note: This creates an empty document locally. The actual data
-        // will be synced when a sync server is configured.
-        let mut doc = RottDocument::with_id(root_id);
-
-        // Save it
+        // Only save the root document ID - do NOT create a local document
+        // The actual document will be pulled from the sync server
         self.persistence
-            .save(&mut doc)
-            .context("Failed to save root document")?;
+            .save_root_doc_id(&root_id)
+            .context("Failed to save root document ID")?;
 
         Ok(InitResult {
             root_id,
@@ -195,8 +212,10 @@ mod tests {
         assert!(!result.is_new);
         assert_eq!(result.root_id, join_id);
 
-        // Should now be initialized with the joined ID
+        // Should now be initialized (has ID) but in pending sync state (no document)
         assert!(identity.is_initialized());
+        assert!(!identity.has_local_document());
+        assert!(identity.is_pending_sync().unwrap());
         assert_eq!(identity.root_id().unwrap().unwrap(), join_id);
     }
 

@@ -99,6 +99,18 @@ impl RottDocument {
         Self { id, doc }
     }
 
+    /// Create an empty document for initial sync (no local changes)
+    ///
+    /// This creates a document with no local history, intended to receive
+    /// the full document state from a sync server. The ID is used to
+    /// identify which document to request from the server.
+    ///
+    /// After syncing, the document will have the server's full history.
+    pub fn empty_for_sync(id: DocumentId) -> Self {
+        let doc = AutoCommit::new();
+        Self { id, doc }
+    }
+
     /// Load a document from Automerge bytes
     pub fn load(bytes: &[u8]) -> Result<Self, DocumentError> {
         let doc = AutoCommit::load(bytes)?;

@@ -7,6 +7,23 @@ use rott_core::{Config, Store};
 
 use crate::output::Output;
 
+/// Perform initial sync for pending sync state (after join)
+pub async fn initial_sync(config: &Config, output: &Output) -> Result<()> {
+    output.message("Performing initial sync to pull document from server...");
+
+    match Store::initial_sync(config).await {
+        Ok(()) => {
+            output.success("Initial sync complete! Your data has been downloaded.");
+            output.message("You can now use rott normally.");
+            Ok(())
+        }
+        Err(e) => {
+            output.message(&format!("Initial sync failed: {}", e));
+            Err(e)
+        }
+    }
+}
+
 /// Sync with the remote server
 pub async fn sync(store: &mut Store, output: &Output) -> Result<()> {
     let config = store.config();
