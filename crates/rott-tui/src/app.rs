@@ -109,6 +109,8 @@ pub struct App {
     pub filter_text: String,
     /// Whether we're currently adding a link (async operation)
     pub is_loading: bool,
+    /// Scroll offset for detail pane
+    pub detail_scroll: u16,
 }
 
 impl App {
@@ -142,6 +144,7 @@ impl App {
             deleted_link: None,
             filter_text: String::new(),
             is_loading: false,
+            detail_scroll: 0,
         })
     }
 
@@ -190,10 +193,12 @@ impl App {
             ActivePane::Items => {
                 if self.link_index > 0 {
                     self.link_index -= 1;
+                    self.detail_scroll = 0; // Reset scroll when changing selection
                 }
             }
             ActivePane::Detail => {
-                // Could scroll detail view in the future
+                // Scroll detail view up
+                self.detail_scroll = self.detail_scroll.saturating_sub(1);
             }
         }
     }
@@ -209,10 +214,12 @@ impl App {
             ActivePane::Items => {
                 if self.link_index < self.links.len().saturating_sub(1) {
                     self.link_index += 1;
+                    self.detail_scroll = 0; // Reset scroll when changing selection
                 }
             }
             ActivePane::Detail => {
-                // Could scroll detail view in the future
+                // Scroll detail view down
+                self.detail_scroll = self.detail_scroll.saturating_add(1);
             }
         }
     }
@@ -241,10 +248,14 @@ impl App {
             ActivePane::Items => {
                 // Open link in browser
                 if let Some(link) = self.current_link() {
-                    if let Err(e) = open::that(&link.url) {
+                    let url = link.url.clone();
+                    let title = link.title.clone();
+                    // Show opening message
+                    self.status_message = Some(format!("Opening '{}'...", title));
+                    if let Err(e) = open::that(&url) {
                         self.status_message = Some(format!("Failed to open: {}", e));
                     } else {
-                        self.status_message = Some("Opened in browser".to_string());
+                        self.status_message = Some(format!("Opened '{}'", title));
                     }
                 }
             }

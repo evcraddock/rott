@@ -192,32 +192,38 @@ fn draw_detail_pane(frame: &mut Frame, app: &App, area: Rect) {
         ];
 
         // Description
-        if let Some(desc) = &link.description {
-            lines.push(Line::from(""));
-            lines.push(Line::from(vec![Span::styled(
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled(
                 "Description: ",
                 Style::default().add_modifier(Modifier::BOLD),
-            )]));
-            lines.push(Line::from(desc.as_str()));
-        }
+            ),
+            Span::raw(link.description.as_deref().unwrap_or("-")),
+        ]));
+
+        // Author
+        lines.push(Line::from(""));
+        let author_str = if link.author.is_empty() {
+            "-".to_string()
+        } else {
+            link.author.join(", ")
+        };
+        lines.push(Line::from(vec![
+            Span::styled("Author: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(author_str),
+        ]));
 
         // Tags
-        if !link.tags.is_empty() {
-            lines.push(Line::from(""));
-            lines.push(Line::from(vec![
-                Span::styled("Tags: ", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(link.tags.join(", ")),
-            ]));
-        }
-
-        // Authors
-        if !link.author.is_empty() {
-            lines.push(Line::from(""));
-            lines.push(Line::from(vec![
-                Span::styled("Author: ", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(link.author.join(", ")),
-            ]));
-        }
+        lines.push(Line::from(""));
+        let tags_str = if link.tags.is_empty() {
+            "-".to_string()
+        } else {
+            link.tags.join(", ")
+        };
+        lines.push(Line::from(vec![
+            Span::styled("Tags: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(tags_str),
+        ]));
 
         // Dates
         lines.push(Line::from(""));
@@ -230,43 +236,66 @@ fn draw_detail_pane(frame: &mut Frame, app: &App, area: Rect) {
             Span::raw(link.updated_at.format("%Y-%m-%d %H:%M").to_string()),
         ]));
 
-        // Notes
-        if !link.notes.is_empty() {
-            lines.push(Line::from(""));
+        // Notes section with separator
+        lines.push(Line::from(""));
+        if link.notes.is_empty() {
             lines.push(Line::from(vec![Span::styled(
-                format!("Notes ({}):", link.notes.len()),
-                Style::default().add_modifier(Modifier::BOLD),
+                "── No notes ──",
+                Style::default().add_modifier(Modifier::DIM),
+            )]));
+        } else {
+            // Create separator line that fits width
+            let note_header = format!("── Notes ({}) ", link.notes.len());
+            let remaining = area.width.saturating_sub(note_header.len() as u16 + 2) as usize;
+            let separator = format!("{}{}", note_header, "─".repeat(remaining));
+            lines.push(Line::from(vec![Span::styled(
+                separator,
+                Style::default().add_modifier(Modifier::DIM),
             )]));
 
             for note in &link.notes {
                 lines.push(Line::from(""));
-                let timestamp = note.created_at.format("%Y-%m-%d %H:%M").to_string();
+                let timestamp = note.created_at.format("%Y-%m-%d").to_string();
                 if let Some(title) = &note.title {
                     lines.push(Line::from(vec![
                         Span::styled(
-                            format!("  {} - ", timestamp),
+                            format!("[{}] ", timestamp),
                             Style::default().add_modifier(Modifier::DIM),
                         ),
-                        Span::styled(title, Style::default().add_modifier(Modifier::ITALIC)),
+                        Span::styled(title, Style::default().add_modifier(Modifier::BOLD)),
                     ]));
+                    // Show body indented below title
+                    for body_line in note.body.lines() {
+                        lines.push(Line::from(format!("  {}", body_line)));
+                    }
                 } else {
                     lines.push(Line::from(vec![Span::styled(
-                        format!("  {}", timestamp),
+                        format!("[{}]", timestamp),
                         Style::default().add_modifier(Modifier::DIM),
                     )]));
+                    // Show body indented
+                    for body_line in note.body.lines() {
+                        lines.push(Line::from(format!("  {}", body_line)));
+                    }
                 }
-                lines.push(Line::from(format!("  {}", note.body)));
             }
         }
 
         lines
     } else {
-        vec![Line::from("No link selected")]
+        vec![
+            Line::from(""),
+            Line::from(vec![Span::styled(
+                "Select a link to view details",
+                Style::default().add_modifier(Modifier::DIM),
+            )]),
+        ]
     };
 
     let paragraph = Paragraph::new(content)
         .block(block)
-        .wrap(Wrap { trim: true });
+        .wrap(Wrap { trim: true })
+        .scroll((app.detail_scroll, 0));
 
     frame.render_widget(paragraph, area);
 }
