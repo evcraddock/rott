@@ -9,6 +9,11 @@
 //! The root document is created on first run and contains all user data.
 //! Its ID serves as the user's identity for sync purposes.
 //!
+//! ## Notes
+//!
+//! Notes are children of links, not standalone entities. To add a note,
+//! first get the link, add the note to it, then update the link.
+//!
 //! ## Usage
 //!
 //! ```ignore
@@ -117,7 +122,6 @@ impl Store {
     /// Check if this is a new store (just created)
     pub fn is_new(&self) -> bool {
         self.projection.link_count().unwrap_or(0) == 0
-            && self.projection.note_count().unwrap_or(0) == 0
     }
 
     // ==================== Link Operations ====================
@@ -146,7 +150,7 @@ impl Store {
         self.save_and_project()
     }
 
-    /// Get a link by ID
+    /// Get a link by ID (includes notes)
     pub fn get_link(&self, id: Uuid) -> Result<Option<Link>> {
         self.projection
             .get_link(&id.to_string())
@@ -174,58 +178,22 @@ impl Store {
             .context("Failed to search links")
     }
 
-    // ==================== Note Operations ====================
+    // ==================== Note Operations (via Link) ====================
 
-    /// Add a new note
-    pub fn add_note(&mut self, note: &Note) -> Result<()> {
+    /// Add a note to a link
+    pub fn add_note_to_link(&mut self, link_id: Uuid, note: &Note) -> Result<()> {
         self.doc
-            .add_note(note)
-            .context("Failed to add note to document")?;
+            .add_note_to_link(link_id, note)
+            .context("Failed to add note to link")?;
         self.save_and_project()
     }
 
-    /// Update an existing note
-    pub fn update_note(&mut self, note: &Note) -> Result<()> {
+    /// Remove a note from a link
+    pub fn remove_note_from_link(&mut self, link_id: Uuid, note_id: Uuid) -> Result<()> {
         self.doc
-            .update_note(note)
-            .context("Failed to update note in document")?;
+            .remove_note_from_link(link_id, note_id)
+            .context("Failed to remove note from link")?;
         self.save_and_project()
-    }
-
-    /// Delete a note
-    pub fn delete_note(&mut self, id: Uuid) -> Result<()> {
-        self.doc
-            .delete_note(id)
-            .context("Failed to delete note from document")?;
-        self.save_and_project()
-    }
-
-    /// Get a note by ID
-    pub fn get_note(&self, id: Uuid) -> Result<Option<Note>> {
-        self.projection
-            .get_note(&id.to_string())
-            .context("Failed to get note")
-    }
-
-    /// Get all notes
-    pub fn get_all_notes(&self) -> Result<Vec<Note>> {
-        self.projection
-            .get_all_notes()
-            .context("Failed to get notes")
-    }
-
-    /// Get notes by tag
-    pub fn get_notes_by_tag(&self, tag: &str) -> Result<Vec<Note>> {
-        self.projection
-            .get_notes_by_tag(tag)
-            .context("Failed to get notes by tag")
-    }
-
-    /// Search notes using full-text search
-    pub fn search_notes(&self, query: &str) -> Result<Vec<Note>> {
-        self.projection
-            .search_notes(query)
-            .context("Failed to search notes")
     }
 
     // ==================== Tag Operations ====================
@@ -251,7 +219,7 @@ impl Store {
             .context("Failed to count links")
     }
 
-    /// Get count of notes
+    /// Get count of notes (across all links)
     pub fn note_count(&self) -> Result<i64> {
         self.projection
             .note_count()
@@ -310,7 +278,6 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use tempfile::TempDir;
 
     fn test_config(temp_dir: &TempDir) -> Config {
@@ -364,15 +331,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = test_config(&temp_dir);
 
-        let id1 = Store::open_with_config(config.clone())
-            .unwrap()
-            .root_id()
-            .clone();
-        let id2 = Store::open_with_config(config.clone())
-            .unwrap()
-            .root_id()
-            .clone();
-        let id3 = Store::open_with_config(config).unwrap().root_id().clone();
+        let id1 = *Store::open_with_config(config.clone()).unwrap().root_id();
+        let id2 = *Store::open_with_config(config.clone()).unwrap().root_id();
+        let id3 = *Store::open_with_config(config).unwrap().root_id();
 
         assert_eq!(id1, id2);
         assert_eq!(id2, id3);
@@ -471,50 +432,82 @@ mod tests {
     }
 
     #[test]
-    fn test_add_and_get_note() {
+    fn test_add_note_to_link() {
         let temp_dir = TempDir::new().unwrap();
         let mut store = Store::open_with_config(test_config(&temp_dir)).unwrap();
 
-        let mut note = Note::new("Test Note");
-        note.set_body("This is the body");
-        note.add_tag("idea");
+        let link = Link::new("https://example.com");
+        let link_id = link.id;
+        store.add_link(&link).unwrap();
 
-        store.add_note(&note).unwrap();
+        let note = Note::new("Great article!");
+        store.add_note_to_link(link_id, &note).unwrap();
 
-        let retrieved = store.get_note(note.id).unwrap().unwrap();
-        assert_eq!(retrieved.title, "Test Note");
-        assert_eq!(retrieved.body, "This is the body");
-        assert!(retrieved.tags.contains(&"idea".to_string()));
+        let retrieved = store.get_link(link_id).unwrap().unwrap();
+        assert_eq!(retrieved.notes.len(), 1);
+        assert_eq!(retrieved.notes[0].body, "Great article!");
     }
 
     #[test]
-    fn test_update_note() {
+    fn test_add_note_with_title() {
         let temp_dir = TempDir::new().unwrap();
         let mut store = Store::open_with_config(test_config(&temp_dir)).unwrap();
 
-        let mut note = Note::new("Test Note");
-        store.add_note(&note).unwrap();
+        let link = Link::new("https://example.com");
+        let link_id = link.id;
+        store.add_link(&link).unwrap();
 
-        note.set_title("Updated Title");
-        note.set_body("Updated body");
-        store.update_note(&note).unwrap();
+        let note = Note::with_title("Summary", "This is a summary of the article");
+        store.add_note_to_link(link_id, &note).unwrap();
 
-        let retrieved = store.get_note(note.id).unwrap().unwrap();
-        assert_eq!(retrieved.title, "Updated Title");
-        assert_eq!(retrieved.body, "Updated body");
+        let retrieved = store.get_link(link_id).unwrap().unwrap();
+        assert_eq!(retrieved.notes[0].title, Some("Summary".to_string()));
     }
 
     #[test]
-    fn test_delete_note() {
+    fn test_remove_note_from_link() {
         let temp_dir = TempDir::new().unwrap();
         let mut store = Store::open_with_config(test_config(&temp_dir)).unwrap();
 
-        let note = Note::new("Test Note");
-        store.add_note(&note).unwrap();
+        let link = Link::new("https://example.com");
+        let link_id = link.id;
+        store.add_link(&link).unwrap();
+
+        let note = Note::new("To be removed");
+        let note_id = note.id;
+        store.add_note_to_link(link_id, &note).unwrap();
+
         assert_eq!(store.note_count().unwrap(), 1);
 
-        store.delete_note(note.id).unwrap();
+        store.remove_note_from_link(link_id, note_id).unwrap();
+
         assert_eq!(store.note_count().unwrap(), 0);
+        let retrieved = store.get_link(link_id).unwrap().unwrap();
+        assert!(retrieved.notes.is_empty());
+    }
+
+    #[test]
+    fn test_link_with_multiple_notes() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut store = Store::open_with_config(test_config(&temp_dir)).unwrap();
+
+        let link = Link::new("https://example.com");
+        let link_id = link.id;
+        store.add_link(&link).unwrap();
+
+        store
+            .add_note_to_link(link_id, &Note::new("First note"))
+            .unwrap();
+        store
+            .add_note_to_link(link_id, &Note::new("Second note"))
+            .unwrap();
+        store
+            .add_note_to_link(link_id, &Note::with_title("Third", "With title"))
+            .unwrap();
+
+        let retrieved = store.get_link(link_id).unwrap().unwrap();
+        assert_eq!(retrieved.notes.len(), 3);
+        assert_eq!(store.note_count().unwrap(), 3);
     }
 
     #[test]
@@ -527,10 +520,10 @@ mod tests {
         link.add_tag("rust");
         store.add_link(&link).unwrap();
 
-        let mut note = Note::new("Note");
-        note.add_tag("rust");
-        note.add_tag("idea");
-        store.add_note(&note).unwrap();
+        let mut link2 = Link::new("https://example2.com");
+        link2.add_tag("rust");
+        link2.add_tag("idea");
+        store.add_link(&link2).unwrap();
 
         let tags = store.get_all_tags().unwrap();
         assert_eq!(tags.len(), 3); // idea, rust, web (alphabetical)
@@ -544,13 +537,13 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let mut store = Store::open_with_config(test_config(&temp_dir)).unwrap();
 
-        let mut link = Link::new("https://example.com");
-        link.add_tag("shared");
-        store.add_link(&link).unwrap();
+        let mut link1 = Link::new("https://example.com");
+        link1.add_tag("shared");
+        store.add_link(&link1).unwrap();
 
-        let mut note = Note::new("Note");
-        note.add_tag("shared");
-        store.add_note(&note).unwrap();
+        let mut link2 = Link::new("https://example2.com");
+        link2.add_tag("shared");
+        store.add_link(&link2).unwrap();
 
         let tags = store.get_tags_with_counts().unwrap();
         let shared = tags.iter().find(|(name, _)| name == "shared").unwrap();
@@ -580,11 +573,12 @@ mod tests {
 
             let mut link = Link::new("https://persist.com");
             link.set_title("Persistent Link");
+            let link_id = link.id;
             store.add_link(&link).unwrap();
 
-            let mut note = Note::new("Persistent Note");
-            note.set_body("Body content");
-            store.add_note(&note).unwrap();
+            store
+                .add_note_to_link(link_id, &Note::new("Persistent note"))
+                .unwrap();
         }
 
         // Reopen and verify
@@ -596,9 +590,8 @@ mod tests {
 
             let links = store.get_all_links().unwrap();
             assert_eq!(links[0].title, "Persistent Link");
-
-            let notes = store.get_all_notes().unwrap();
-            assert_eq!(notes[0].body, "Body content");
+            assert_eq!(links[0].notes.len(), 1);
+            assert_eq!(links[0].notes[0].body, "Persistent note");
         }
     }
 

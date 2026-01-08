@@ -5,7 +5,7 @@
 //! - JSON output (--json flag)
 //! - Quiet mode for scripting (--quiet flag)
 
-use rott_core::{Link, Note};
+use rott_core::Link;
 
 /// Output format options
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,7 +47,7 @@ impl Output {
         matches!(self.format, OutputFormat::Quiet)
     }
 
-    /// Print a single link
+    /// Print a single link (with notes summary)
     pub fn print_link(&self, link: &Link) {
         match self.format {
             OutputFormat::Human => {
@@ -65,6 +65,25 @@ impl Output {
                 }
                 println!("Created:     {}", link.created_at.format("%Y-%m-%d %H:%M"));
                 println!("Updated:     {}", link.updated_at.format("%Y-%m-%d %H:%M"));
+
+                // Show notes
+                if !link.notes.is_empty() {
+                    println!();
+                    println!("── Notes ({}) ──", link.notes.len());
+                    for note in &link.notes {
+                        let preview = truncate_line(&note.body, 60);
+                        if let Some(ref title) = note.title {
+                            println!(
+                                "[{}] {} - {}",
+                                note.created_at.format("%Y-%m-%d"),
+                                title,
+                                preview
+                            );
+                        } else {
+                            println!("[{}] {}", note.created_at.format("%Y-%m-%d"), preview);
+                        }
+                    }
+                }
             }
             OutputFormat::Json => {
                 println!("{}", serde_json::to_string_pretty(link).unwrap());
@@ -84,11 +103,17 @@ impl Output {
                     return;
                 }
                 for link in links {
+                    let notes_indicator = if link.notes.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" [{}]", link.notes.len())
+                    };
                     println!(
-                        "{} | {} | {}",
+                        "{} | {}{} | {}",
                         &link.id.to_string()[..8],
-                        truncate(&link.title, 40),
-                        truncate(&link.url, 50)
+                        truncate(&link.title, 35),
+                        notes_indicator,
+                        truncate(&link.url, 45)
                     );
                 }
                 println!("\n{} link(s)", links.len());
@@ -104,52 +129,39 @@ impl Output {
         }
     }
 
-    /// Print a single note
-    pub fn print_note(&self, note: &Note) {
+    /// Print notes for a specific link
+    pub fn print_link_notes(&self, link: &Link) {
         match self.format {
             OutputFormat::Human => {
-                println!("ID:      {}", note.id);
-                println!("Title:   {}", note.title);
-                if !note.tags.is_empty() {
-                    println!("Tags:    {}", note.tags.join(", "));
-                }
-                println!("Created: {}", note.created_at.format("%Y-%m-%d %H:%M"));
-                println!("Updated: {}", note.updated_at.format("%Y-%m-%d %H:%M"));
+                println!("Notes for: {} - {}", &link.id.to_string()[..8], link.title);
                 println!();
-                println!("{}", note.body);
-            }
-            OutputFormat::Json => {
-                println!("{}", serde_json::to_string_pretty(note).unwrap());
-            }
-            OutputFormat::Quiet => {
-                println!("{}", note.id);
-            }
-        }
-    }
 
-    /// Print a list of notes
-    pub fn print_notes(&self, notes: &[Note]) {
-        match self.format {
-            OutputFormat::Human => {
-                if notes.is_empty() {
-                    println!("No notes found.");
+                if link.notes.is_empty() {
+                    println!("No notes on this link.");
                     return;
                 }
-                for note in notes {
+
+                for note in &link.notes {
+                    println!("────────────────────────────────────────");
                     println!(
-                        "{} | {} | {}",
+                        "ID: {}  Created: {}",
                         &note.id.to_string()[..8],
-                        truncate(&note.title, 40),
-                        note.created_at.format("%Y-%m-%d")
+                        note.created_at.format("%Y-%m-%d %H:%M")
                     );
+                    if let Some(ref title) = note.title {
+                        println!("Title: {}", title);
+                    }
+                    println!();
+                    println!("{}", note.body);
+                    println!();
                 }
-                println!("\n{} note(s)", notes.len());
+                println!("{} note(s)", link.notes.len());
             }
             OutputFormat::Json => {
-                println!("{}", serde_json::to_string_pretty(notes).unwrap());
+                println!("{}", serde_json::to_string_pretty(&link.notes).unwrap());
             }
             OutputFormat::Quiet => {
-                for note in notes {
+                for note in &link.notes {
                     println!("{}", note.id);
                 }
             }
@@ -224,6 +236,12 @@ fn truncate(s: &str, max_len: usize) -> String {
     }
 }
 
+/// Truncate to first line and max length
+fn truncate_line(s: &str, max_len: usize) -> String {
+    let first_line = s.lines().next().unwrap_or("");
+    truncate(first_line, max_len)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -241,5 +259,15 @@ mod tests {
     fn test_truncate() {
         assert_eq!(truncate("short", 10), "short");
         assert_eq!(truncate("this is a long string", 10), "this is...");
+    }
+
+    #[test]
+    fn test_truncate_line() {
+        assert_eq!(truncate_line("single line", 20), "single line");
+        assert_eq!(truncate_line("line one\nline two", 20), "line one");
+        assert_eq!(
+            truncate_line("very long single line here", 10),
+            "very lo..."
+        );
     }
 }

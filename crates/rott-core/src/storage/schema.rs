@@ -6,7 +6,7 @@
 use rusqlite::{Connection, Result};
 
 /// Current schema version for migrations
-pub const SCHEMA_VERSION: i32 = 1;
+pub const SCHEMA_VERSION: i32 = 2;
 
 /// Initialize the database schema
 pub fn init_schema(conn: &Connection) -> Result<()> {
@@ -28,13 +28,14 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
             updated_at INTEGER NOT NULL
         );
 
-        -- Notes table
+        -- Notes table (child of links)
         CREATE TABLE IF NOT EXISTS notes (
             id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
+            link_id TEXT NOT NULL,
+            title TEXT,
             body TEXT NOT NULL,
             created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
+            FOREIGN KEY (link_id) REFERENCES links(id) ON DELETE CASCADE
         );
 
         -- Authors for links (one-to-many)
@@ -61,15 +62,6 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
             FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
         );
 
-        -- Note-tag junction table (many-to-many)
-        CREATE TABLE IF NOT EXISTS note_tags (
-            note_id TEXT NOT NULL,
-            tag_id INTEGER NOT NULL,
-            PRIMARY KEY (note_id, tag_id),
-            FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE,
-            FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
-        );
-
         -- Indexes for common query patterns
 
         -- Query links by URL (for duplicate detection)
@@ -77,16 +69,17 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
 
         -- Query by creation date (for sorting/filtering)
         CREATE INDEX IF NOT EXISTS idx_links_created_at ON links(created_at);
-        CREATE INDEX IF NOT EXISTS idx_notes_created_at ON notes(created_at);
 
         -- Query by update date
         CREATE INDEX IF NOT EXISTS idx_links_updated_at ON links(updated_at);
-        CREATE INDEX IF NOT EXISTS idx_notes_updated_at ON notes(updated_at);
+
+        -- Query notes by link
+        CREATE INDEX IF NOT EXISTS idx_notes_link_id ON notes(link_id);
+        CREATE INDEX IF NOT EXISTS idx_notes_created_at ON notes(created_at);
 
         -- Fast tag lookups
         CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name);
         CREATE INDEX IF NOT EXISTS idx_link_tags_tag_id ON link_tags(tag_id);
-        CREATE INDEX IF NOT EXISTS idx_note_tags_tag_id ON note_tags(tag_id);
 
         -- Full-text search preparation (FTS5)
         -- Links: search title, url, description
@@ -207,8 +200,26 @@ mod tests {
         assert!(tables.contains(&"notes".to_string()));
         assert!(tables.contains(&"tags".to_string()));
         assert!(tables.contains(&"link_tags".to_string()));
-        assert!(tables.contains(&"note_tags".to_string()));
         assert!(tables.contains(&"link_authors".to_string()));
+    }
+
+    #[test]
+    fn test_notes_have_link_id() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+
+        // Verify notes table has link_id column
+        let columns: Vec<String> = conn
+            .prepare("PRAGMA table_info(notes)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+
+        assert!(columns.contains(&"link_id".to_string()));
+        assert!(columns.contains(&"title".to_string()));
+        assert!(columns.contains(&"body".to_string()));
     }
 
     #[test]
@@ -259,5 +270,39 @@ mod tests {
         assert!(indexes.contains(&"idx_links_url".to_string()));
         assert!(indexes.contains(&"idx_links_created_at".to_string()));
         assert!(indexes.contains(&"idx_tags_name".to_string()));
+        assert!(indexes.contains(&"idx_notes_link_id".to_string()));
+    }
+
+    #[test]
+    fn test_cascade_delete() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+
+        // Enable foreign keys
+        conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
+
+        // Insert a link
+        conn.execute(
+            "INSERT INTO links (id, title, url, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+            ["link1", "Test", "https://example.com", "1000", "1000"],
+        )
+        .unwrap();
+
+        // Insert a note for the link
+        conn.execute(
+            "INSERT INTO notes (id, link_id, body, created_at) VALUES (?, ?, ?, ?)",
+            ["note1", "link1", "A note", "1000"],
+        )
+        .unwrap();
+
+        // Delete the link
+        conn.execute("DELETE FROM links WHERE id = ?", ["link1"])
+            .unwrap();
+
+        // Note should be deleted too
+        let count: i32 = conn
+            .query_row("SELECT COUNT(*) FROM notes", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
     }
 }

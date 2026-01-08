@@ -1,4 +1,6 @@
 //! Note command handlers
+//!
+//! Notes are children of links, providing annotations and comments.
 
 use anyhow::{bail, Context, Result};
 use uuid::Uuid;
@@ -8,111 +10,103 @@ use rott_core::{Note, Store};
 use crate::editor::{confirm, edit_text};
 use crate::output::Output;
 
-/// Create a new note
+/// Create a new note on a link
 pub fn create(
     store: &mut Store,
-    title: String,
-    tags: Vec<String>,
+    link_id: String,
+    title: Option<String>,
     body: Option<String>,
     output: &Output,
 ) -> Result<()> {
-    let mut note = Note::new(&title);
+    let link_uuid = parse_link_id(&link_id, store)?;
 
-    // Add tags
-    for tag in tags {
-        note.add_tag(tag);
-    }
+    // Get the link to show context
+    let link = store
+        .get_link(link_uuid)?
+        .ok_or_else(|| anyhow::anyhow!("Link not found: {}", link_id))?;
 
     // Get body content
     let body_content = match body {
         Some(b) => b,
         None => {
             // Open editor for body
-            let initial = format!("# {}\n\n<!-- Enter your note content below -->\n\n", title);
-            edit_text(&initial).context("Failed to edit note")?
+            let initial = format!(
+                "<!-- Adding note to: {} -->\n<!-- {} -->\n\n",
+                link.title, link.url
+            );
+            let edited = edit_text(&initial).context("Failed to edit note")?;
+
+            // Remove the comment lines
+            edited
+                .lines()
+                .filter(|line| !line.starts_with("<!--"))
+                .collect::<Vec<_>>()
+                .join("\n")
+                .trim()
+                .to_string()
         }
     };
 
-    note.set_body(body_content);
+    if body_content.is_empty() {
+        bail!("Note body cannot be empty");
+    }
 
-    store.add_note(&note).context("Failed to create note")?;
-
-    output.success(&format!("Created note: {}", note.id));
-    output.print_note(&note);
-
-    Ok(())
-}
-
-/// List all notes, optionally filtered by tag
-pub fn list(store: &Store, tag: Option<String>, output: &Output) -> Result<()> {
-    let notes = match tag {
-        Some(ref t) => store.get_notes_by_tag(t)?,
-        None => store.get_all_notes()?,
+    let note = match title {
+        Some(t) => Note::with_title(t, body_content),
+        None => Note::new(body_content),
     };
 
-    output.print_notes(&notes);
-    Ok(())
-}
+    let note_id = note.id;
+    store
+        .add_note_to_link(link_uuid, &note)
+        .context("Failed to add note to link")?;
 
-/// Show a single note
-pub fn show(store: &Store, id: String, output: &Output) -> Result<()> {
-    let uuid = parse_note_id(&id, store)?;
-
-    let note = store
-        .get_note(uuid)?
-        .ok_or_else(|| anyhow::anyhow!("Note not found: {}", id))?;
-
-    output.print_note(&note);
-    Ok(())
-}
-
-/// Edit a note
-pub fn edit(store: &mut Store, id: String, output: &Output) -> Result<()> {
-    let uuid = parse_note_id(&id, store)?;
-
-    let mut note = store
-        .get_note(uuid)?
-        .ok_or_else(|| anyhow::anyhow!("Note not found: {}", id))?;
-
-    // Create editable content
-    let content = format!(
-        "title: {}\ntags: {}\n---\n{}",
-        note.title,
-        note.tags.join(", "),
-        note.body
-    );
-
-    let edited = edit_text(&content).context("Failed to edit note")?;
-
-    // Parse edited content
-    let (new_title, new_tags, new_body) = parse_note_content(&edited)?;
-
-    note.set_title(new_title);
-    note.set_tags(new_tags);
-    note.set_body(new_body);
-
-    store.update_note(&note).context("Failed to update note")?;
-
-    output.success("Note updated");
-    output.print_note(&note);
+    output.success(&format!(
+        "Added note {} to link {}",
+        &note_id.to_string()[..8],
+        &link_uuid.to_string()[..8]
+    ));
 
     Ok(())
 }
 
-/// Delete a note
-pub fn delete(store: &mut Store, id: String, output: &Output) -> Result<()> {
-    let uuid = parse_note_id(&id, store)?;
+/// List all notes on a link
+pub fn list(store: &Store, link_id: String, output: &Output) -> Result<()> {
+    let link_uuid = parse_link_id(&link_id, store)?;
 
-    let note = store
-        .get_note(uuid)?
-        .ok_or_else(|| anyhow::anyhow!("Note not found: {}", id))?;
+    let link = store
+        .get_link(link_uuid)?
+        .ok_or_else(|| anyhow::anyhow!("Link not found: {}", link_id))?;
+
+    output.print_link_notes(&link);
+    Ok(())
+}
+
+/// Delete a note from a link
+pub fn delete(store: &mut Store, link_id: String, note_id: String, output: &Output) -> Result<()> {
+    let link_uuid = parse_link_id(&link_id, store)?;
+
+    let link = store
+        .get_link(link_uuid)?
+        .ok_or_else(|| anyhow::anyhow!("Link not found: {}", link_id))?;
+
+    let note_uuid = parse_note_id(&note_id, &link)?;
+
+    let note = link
+        .get_note(note_uuid)
+        .ok_or_else(|| anyhow::anyhow!("Note not found: {}", note_id))?;
 
     // Confirm deletion
     if output.should_prompt() {
+        let preview = if note.body.len() > 50 {
+            format!("{}...", &note.body[..50])
+        } else {
+            note.body.clone()
+        };
         println!(
             "Delete note: {} - {}",
             &note.id.to_string()[..8],
-            note.title
+            preview.replace('\n', " ")
         );
         if !confirm("Are you sure?")? {
             println!("Cancelled.");
@@ -120,30 +114,52 @@ pub fn delete(store: &mut Store, id: String, output: &Output) -> Result<()> {
         }
     }
 
-    store.delete_note(uuid).context("Failed to delete note")?;
+    store
+        .remove_note_from_link(link_uuid, note_uuid)
+        .context("Failed to delete note")?;
 
-    output.success(&format!("Deleted note: {}", uuid));
+    output.success(&format!("Deleted note: {}", &note_uuid.to_string()[..8]));
 
     Ok(())
 }
 
-/// Search notes
-pub fn search(store: &Store, query: String, output: &Output) -> Result<()> {
-    let notes = store.search_notes(&query)?;
-    output.print_notes(&notes);
-    Ok(())
-}
-
-/// Parse a note ID (supports full UUID or prefix)
-fn parse_note_id(id: &str, store: &Store) -> Result<Uuid> {
+/// Parse a link ID (supports full UUID or prefix)
+fn parse_link_id(id: &str, store: &Store) -> Result<Uuid> {
     // Try full UUID first
     if let Ok(uuid) = Uuid::parse_str(id) {
         return Ok(uuid);
     }
 
     // Try prefix match
-    let notes = store.get_all_notes()?;
-    let matches: Vec<_> = notes
+    let links = store.get_all_links()?;
+    let matches: Vec<_> = links
+        .iter()
+        .filter(|l| l.id.to_string().starts_with(id))
+        .collect();
+
+    match matches.len() {
+        0 => bail!("No link found matching: {}", id),
+        1 => Ok(matches[0].id),
+        _ => {
+            eprintln!("Multiple links match '{}':", id);
+            for link in &matches {
+                eprintln!("  {} - {}", link.id, link.title);
+            }
+            bail!("Ambiguous ID. Please provide more characters.");
+        }
+    }
+}
+
+/// Parse a note ID (supports full UUID or prefix)
+fn parse_note_id(id: &str, link: &rott_core::Link) -> Result<Uuid> {
+    // Try full UUID first
+    if let Ok(uuid) = Uuid::parse_str(id) {
+        return Ok(uuid);
+    }
+
+    // Try prefix match
+    let matches: Vec<_> = link
+        .notes
         .iter()
         .filter(|n| n.id.to_string().starts_with(id))
         .collect();
@@ -154,86 +170,14 @@ fn parse_note_id(id: &str, store: &Store) -> Result<Uuid> {
         _ => {
             eprintln!("Multiple notes match '{}':", id);
             for note in &matches {
-                eprintln!("  {} - {}", note.id, note.title);
+                let preview = if note.body.len() > 30 {
+                    format!("{}...", &note.body[..30])
+                } else {
+                    note.body.clone()
+                };
+                eprintln!("  {} - {}", &note.id.to_string()[..8], preview);
             }
             bail!("Ambiguous ID. Please provide more characters.");
         }
-    }
-}
-
-/// Parse note content from editor format
-fn parse_note_content(content: &str) -> Result<(String, Vec<String>, String)> {
-    let mut lines = content.lines();
-
-    // Parse title line
-    let title_line = lines.next().unwrap_or("");
-    let title = if title_line.starts_with("title:") {
-        title_line.trim_start_matches("title:").trim().to_string()
-    } else {
-        title_line.trim().to_string()
-    };
-
-    if title.is_empty() {
-        bail!("Note title cannot be empty");
-    }
-
-    // Parse tags line
-    let tags_line = lines.next().unwrap_or("");
-    let tags: Vec<String> = if tags_line.starts_with("tags:") {
-        tags_line
-            .trim_start_matches("tags:")
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect()
-    } else {
-        Vec::new()
-    };
-
-    // Skip separator line (---)
-    let next_line = lines.next().unwrap_or("");
-    let body_start = if next_line.trim() == "---" {
-        lines.collect::<Vec<_>>().join("\n")
-    } else {
-        // No separator, include this line in body
-        std::iter::once(next_line)
-            .chain(lines)
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-
-    Ok((title, tags, body_start.trim().to_string()))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_note_content() {
-        let content = "title: My Note\ntags: rust, programming\n---\nThis is the body.";
-        let (title, tags, body) = parse_note_content(content).unwrap();
-
-        assert_eq!(title, "My Note");
-        assert_eq!(tags, vec!["rust", "programming"]);
-        assert_eq!(body, "This is the body.");
-    }
-
-    #[test]
-    fn test_parse_note_content_no_tags() {
-        let content = "title: My Note\ntags: \n---\nBody content here.";
-        let (title, tags, body) = parse_note_content(content).unwrap();
-
-        assert_eq!(title, "My Note");
-        assert!(tags.is_empty());
-        assert_eq!(body, "Body content here.");
-    }
-
-    #[test]
-    fn test_parse_note_content_multiline_body() {
-        let content = "title: Test\ntags: test\n---\nLine 1\nLine 2\nLine 3";
-        let (_, _, body) = parse_note_content(content).unwrap();
-
-        assert_eq!(body, "Line 1\nLine 2\nLine 3");
     }
 }

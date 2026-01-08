@@ -39,11 +39,6 @@ enum Commands {
         #[command(subcommand)]
         command: LinkCommands,
     },
-    /// Manage notes
-    Note {
-        #[command(subcommand)]
-        command: NoteCommands,
-    },
     /// List all tags
     Tags,
     /// Show or set configuration
@@ -75,7 +70,7 @@ enum LinkCommands {
         #[arg(short, long)]
         tag: Option<String>,
     },
-    /// Show link details
+    /// Show link details (including notes)
     Show {
         /// Link ID (full UUID or prefix)
         id: String,
@@ -96,49 +91,40 @@ enum LinkCommands {
         /// Search query
         query: String,
     },
+    /// Manage notes on a link
+    Note {
+        #[command(subcommand)]
+        command: NoteCommands,
+    },
 }
 
 #[derive(Subcommand)]
 enum NoteCommands {
-    /// Create a new note
+    /// Add a note to a link
     #[command(alias = "add")]
     Create {
-        /// Note title
-        title: String,
-        /// Tags to add
-        #[arg(short, long)]
-        tag: Vec<String>,
+        /// Link ID (full UUID or prefix)
+        link_id: String,
+        /// Note title (optional)
+        #[arg(short = 'T', long)]
+        title: Option<String>,
         /// Note body (opens editor if not provided)
         #[arg(short, long)]
         body: Option<String>,
     },
-    /// List all notes
+    /// List notes on a link
     #[command(alias = "ls")]
     List {
-        /// Filter by tag
-        #[arg(short, long)]
-        tag: Option<String>,
+        /// Link ID (full UUID or prefix)
+        link_id: String,
     },
-    /// Show note details
-    Show {
-        /// Note ID (full UUID or prefix)
-        id: String,
-    },
-    /// Edit a note
-    Edit {
-        /// Note ID (full UUID or prefix)
-        id: String,
-    },
-    /// Delete a note
+    /// Delete a note from a link
     #[command(alias = "rm")]
     Delete {
+        /// Link ID (full UUID or prefix)
+        link_id: String,
         /// Note ID (full UUID or prefix)
-        id: String,
-    },
-    /// Search notes
-    Search {
-        /// Search query
-        query: String,
+        note_id: String,
     },
 }
 
@@ -186,12 +172,14 @@ async fn main() -> Result<()> {
             command: LinkCommands::Edit { .. }
         }) | Some(Commands::Link {
             command: LinkCommands::Delete { .. }
-        }) | Some(Commands::Note {
-            command: NoteCommands::Create { .. }
-        }) | Some(Commands::Note {
-            command: NoteCommands::Edit { .. }
-        }) | Some(Commands::Note {
-            command: NoteCommands::Delete { .. }
+        }) | Some(Commands::Link {
+            command: LinkCommands::Note {
+                command: NoteCommands::Create { .. }
+            }
+        }) | Some(Commands::Link {
+            command: LinkCommands::Note {
+                command: NoteCommands::Delete { .. }
+            }
         })
     );
 
@@ -204,7 +192,6 @@ async fn main() -> Result<()> {
 
     let result = match cli.command.unwrap() {
         Commands::Link { command } => handle_link_command(command, &mut store, &output).await,
-        Commands::Note { command } => handle_note_command(command, &mut store, &output),
         Commands::Tags => commands::tag::list(&store, &output),
         Commands::Config { .. } => unreachable!(), // Handled above
         Commands::Status => commands::status::show(&store, &output),
@@ -217,6 +204,43 @@ async fn main() -> Result<()> {
     }
 
     result
+}
+
+async fn handle_link_command(
+    command: LinkCommands,
+    store: &mut Store,
+    output: &Output,
+) -> Result<()> {
+    match command {
+        LinkCommands::Create { url, tag } => commands::link::create(store, url, tag, output).await,
+        LinkCommands::List { tag } => commands::link::list(store, tag, output),
+        LinkCommands::Show { id } => commands::link::show(store, id, output),
+        LinkCommands::Edit { id } => commands::link::edit(store, id, output),
+        LinkCommands::Delete { id } => commands::link::delete(store, id, output),
+        LinkCommands::Search { query } => commands::link::search(store, query, output),
+        LinkCommands::Note { command } => handle_note_command(command, store, output),
+    }
+}
+
+fn handle_note_command(command: NoteCommands, store: &mut Store, output: &Output) -> Result<()> {
+    match command {
+        NoteCommands::Create {
+            link_id,
+            title,
+            body,
+        } => commands::note::create(store, link_id, title, body, output),
+        NoteCommands::List { link_id } => commands::note::list(store, link_id, output),
+        NoteCommands::Delete { link_id, note_id } => {
+            commands::note::delete(store, link_id, note_id, output)
+        }
+    }
+}
+
+fn handle_config_command(command: Option<ConfigCommands>, output: &Output) -> Result<()> {
+    match command {
+        Some(ConfigCommands::Show) | None => commands::config::show(output),
+        Some(ConfigCommands::Set { key, value }) => commands::config::set(key, value, output),
+    }
 }
 
 /// Auto-sync if sync is enabled, silently handles errors
@@ -235,40 +259,5 @@ async fn auto_sync(store: &mut Store, output: &Output) {
         if !output.is_quiet() {
             eprintln!("⚠ Auto-sync failed: {}", e);
         }
-    }
-}
-
-async fn handle_link_command(
-    command: LinkCommands,
-    store: &mut Store,
-    output: &Output,
-) -> Result<()> {
-    match command {
-        LinkCommands::Create { url, tag } => commands::link::create(store, url, tag, output).await,
-        LinkCommands::List { tag } => commands::link::list(store, tag, output),
-        LinkCommands::Show { id } => commands::link::show(store, id, output),
-        LinkCommands::Edit { id } => commands::link::edit(store, id, output),
-        LinkCommands::Delete { id } => commands::link::delete(store, id, output),
-        LinkCommands::Search { query } => commands::link::search(store, query, output),
-    }
-}
-
-fn handle_note_command(command: NoteCommands, store: &mut Store, output: &Output) -> Result<()> {
-    match command {
-        NoteCommands::Create { title, tag, body } => {
-            commands::note::create(store, title, tag, body, output)
-        }
-        NoteCommands::List { tag } => commands::note::list(store, tag, output),
-        NoteCommands::Show { id } => commands::note::show(store, id, output),
-        NoteCommands::Edit { id } => commands::note::edit(store, id, output),
-        NoteCommands::Delete { id } => commands::note::delete(store, id, output),
-        NoteCommands::Search { query } => commands::note::search(store, query, output),
-    }
-}
-
-fn handle_config_command(command: Option<ConfigCommands>, output: &Output) -> Result<()> {
-    match command {
-        Some(ConfigCommands::Show) | None => commands::config::show(output),
-        Some(ConfigCommands::Set { key, value }) => commands::config::set(key, value, output),
     }
 }

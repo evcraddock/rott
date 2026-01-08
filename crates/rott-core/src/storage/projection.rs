@@ -11,10 +11,9 @@
 //! ## Tables
 //!
 //! - `links` - Link records
-//! - `notes` - Note records
+//! - `notes` - Note records (children of links)
 //! - `tags` - Normalized tag names
 //! - `link_tags` - Link-to-tag junction
-//! - `note_tags` - Note-to-tag junction
 //! - `link_authors` - Authors for each link
 //! - `links_fts` / `notes_fts` - Full-text search (auto-synced via triggers)
 
@@ -79,20 +78,12 @@ impl SqliteProjection {
         // Clear existing data (in correct order for foreign keys)
         clear_all_data(&tx)?;
 
-        // Project links
+        // Project links (which includes their notes)
         let links = doc
             .get_all_links()
             .context("Failed to get links from document")?;
         for link in &links {
             insert_link(&tx, link)?;
-        }
-
-        // Project notes
-        let notes = doc
-            .get_all_notes()
-            .context("Failed to get notes from document")?;
-        for note in &notes {
-            insert_note(&tx, note)?;
         }
 
         tx.commit()?;
@@ -101,7 +92,7 @@ impl SqliteProjection {
 
     // ==================== Query Methods ====================
 
-    /// Get all links
+    /// Get all links (without notes - use get_link for full details)
     pub fn get_all_links(&self) -> Result<Vec<Link>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, title, url, description, created_at, updated_at FROM links ORDER BY created_at DESC",
@@ -128,7 +119,7 @@ impl SqliteProjection {
         Ok(links)
     }
 
-    /// Get a link by ID
+    /// Get a link by ID (includes notes)
     pub fn get_link(&self, id: &str) -> Result<Option<Link>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, title, url, description, created_at, updated_at FROM links WHERE id = ?",
@@ -218,119 +209,6 @@ impl SqliteProjection {
         Ok(links)
     }
 
-    /// Get all notes
-    pub fn get_all_notes(&self) -> Result<Vec<Note>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, title, body, created_at, updated_at FROM notes ORDER BY created_at DESC",
-        )?;
-
-        let note_rows = stmt.query_map([], |row| {
-            Ok(NoteRow {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                body: row.get(2)?,
-                created_at: row.get(3)?,
-                updated_at: row.get(4)?,
-            })
-        })?;
-
-        let mut notes = Vec::new();
-        for row in note_rows {
-            let row = row?;
-            let note = self.hydrate_note(row)?;
-            notes.push(note);
-        }
-
-        Ok(notes)
-    }
-
-    /// Get a note by ID
-    pub fn get_note(&self, id: &str) -> Result<Option<Note>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT id, title, body, created_at, updated_at FROM notes WHERE id = ?")?;
-
-        let mut rows = stmt.query(params![id])?;
-
-        if let Some(row) = rows.next()? {
-            let note_row = NoteRow {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                body: row.get(2)?,
-                created_at: row.get(3)?,
-                updated_at: row.get(4)?,
-            };
-            Ok(Some(self.hydrate_note(note_row)?))
-        } else {
-            Ok(None)
-        }
-    }
-
-    /// Get notes by tag
-    pub fn get_notes_by_tag(&self, tag: &str) -> Result<Vec<Note>> {
-        let mut stmt = self.conn.prepare(
-            r#"
-            SELECT n.id, n.title, n.body, n.created_at, n.updated_at
-            FROM notes n
-            JOIN note_tags nt ON n.id = nt.note_id
-            JOIN tags t ON nt.tag_id = t.id
-            WHERE t.name = ?
-            ORDER BY n.created_at DESC
-            "#,
-        )?;
-
-        let note_rows = stmt.query_map(params![tag], |row| {
-            Ok(NoteRow {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                body: row.get(2)?,
-                created_at: row.get(3)?,
-                updated_at: row.get(4)?,
-            })
-        })?;
-
-        let mut notes = Vec::new();
-        for row in note_rows {
-            let row = row?;
-            let note = self.hydrate_note(row)?;
-            notes.push(note);
-        }
-
-        Ok(notes)
-    }
-
-    /// Search notes using full-text search
-    pub fn search_notes(&self, query: &str) -> Result<Vec<Note>> {
-        let mut stmt = self.conn.prepare(
-            r#"
-            SELECT n.id, n.title, n.body, n.created_at, n.updated_at
-            FROM notes n
-            JOIN notes_fts fts ON n.rowid = fts.rowid
-            WHERE notes_fts MATCH ?
-            ORDER BY rank
-            "#,
-        )?;
-
-        let note_rows = stmt.query_map(params![query], |row| {
-            Ok(NoteRow {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                body: row.get(2)?,
-                created_at: row.get(3)?,
-                updated_at: row.get(4)?,
-            })
-        })?;
-
-        let mut notes = Vec::new();
-        for row in note_rows {
-            let row = row?;
-            let note = self.hydrate_note(row)?;
-            notes.push(note);
-        }
-
-        Ok(notes)
-    }
-
     /// Get all unique tags
     pub fn get_all_tags(&self) -> Result<Vec<String>> {
         let mut stmt = self.conn.prepare("SELECT name FROM tags ORDER BY name")?;
@@ -344,10 +222,10 @@ impl SqliteProjection {
     pub fn get_tags_with_counts(&self) -> Result<Vec<(String, i64)>> {
         let mut stmt = self.conn.prepare(
             r#"
-            SELECT t.name, 
-                   (SELECT COUNT(*) FROM link_tags WHERE tag_id = t.id) +
-                   (SELECT COUNT(*) FROM note_tags WHERE tag_id = t.id) as count
+            SELECT t.name, COUNT(lt.link_id) as count
             FROM tags t
+            LEFT JOIN link_tags lt ON t.id = lt.tag_id
+            GROUP BY t.id
             ORDER BY count DESC, t.name
             "#,
         )?;
@@ -374,10 +252,11 @@ impl SqliteProjection {
 
     // ==================== Private helpers ====================
 
-    /// Hydrate a link with its tags and authors
+    /// Hydrate a link with its tags, authors, and notes
     fn hydrate_link(&self, row: LinkRow) -> Result<Link> {
         let tags = self.get_tags_for_link(&row.id)?;
         let authors = self.get_authors_for_link(&row.id)?;
+        let notes = self.get_notes_for_link(&row.id)?;
 
         let id =
             uuid::Uuid::parse_str(&row.id).with_context(|| format!("Invalid UUID: {}", row.id))?;
@@ -396,28 +275,7 @@ impl SqliteProjection {
             tags,
             created_at,
             updated_at,
-        })
-    }
-
-    /// Hydrate a note with its tags
-    fn hydrate_note(&self, row: NoteRow) -> Result<Note> {
-        let tags = self.get_tags_for_note(&row.id)?;
-
-        let id =
-            uuid::Uuid::parse_str(&row.id).with_context(|| format!("Invalid UUID: {}", row.id))?;
-
-        let created_at = chrono::DateTime::from_timestamp_millis(row.created_at)
-            .unwrap_or_else(chrono::Utc::now);
-        let updated_at = chrono::DateTime::from_timestamp_millis(row.updated_at)
-            .unwrap_or_else(chrono::Utc::now);
-
-        Ok(Note {
-            id,
-            title: row.title,
-            body: row.body,
-            tags,
-            created_at,
-            updated_at,
+            notes,
         })
     }
 
@@ -437,22 +295,6 @@ impl SqliteProjection {
         Ok(tags)
     }
 
-    fn get_tags_for_note(&self, note_id: &str) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare(
-            r#"
-            SELECT t.name FROM tags t
-            JOIN note_tags nt ON t.id = nt.tag_id
-            WHERE nt.note_id = ?
-            ORDER BY t.name
-            "#,
-        )?;
-
-        let tags = stmt
-            .query_map(params![note_id], |row| row.get(0))?
-            .collect::<Result<Vec<String>, _>>()?;
-        Ok(tags)
-    }
-
     fn get_authors_for_link(&self, link_id: &str) -> Result<Vec<String>> {
         let mut stmt = self
             .conn
@@ -462,6 +304,38 @@ impl SqliteProjection {
             .query_map(params![link_id], |row| row.get(0))?
             .collect::<Result<Vec<String>, _>>()?;
         Ok(authors)
+    }
+
+    fn get_notes_for_link(&self, link_id: &str) -> Result<Vec<Note>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, body, created_at FROM notes WHERE link_id = ? ORDER BY created_at",
+        )?;
+
+        let notes = stmt
+            .query_map(params![link_id], |row| {
+                let id: String = row.get(0)?;
+                let title: Option<String> = row.get(1)?;
+                let body: String = row.get(2)?;
+                let created_at: i64 = row.get(3)?;
+                Ok((id, title, body, created_at))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        notes
+            .into_iter()
+            .map(|(id, title, body, created_at)| {
+                let id = uuid::Uuid::parse_str(&id)
+                    .with_context(|| format!("Invalid note UUID: {}", id))?;
+                let created_at = chrono::DateTime::from_timestamp_millis(created_at)
+                    .unwrap_or_else(chrono::Utc::now);
+                Ok(Note {
+                    id,
+                    title,
+                    body,
+                    created_at,
+                })
+            })
+            .collect()
     }
 }
 
@@ -476,29 +350,20 @@ struct LinkRow {
     updated_at: i64,
 }
 
-struct NoteRow {
-    id: String,
-    title: String,
-    body: String,
-    created_at: i64,
-    updated_at: i64,
-}
-
 // ==================== Transaction helpers ====================
 
 /// Clear all data from tables (preserving schema)
 fn clear_all_data(tx: &Transaction) -> Result<()> {
     // Order matters due to foreign keys
     tx.execute("DELETE FROM link_tags", [])?;
-    tx.execute("DELETE FROM note_tags", [])?;
     tx.execute("DELETE FROM link_authors", [])?;
-    tx.execute("DELETE FROM links", [])?;
     tx.execute("DELETE FROM notes", [])?;
+    tx.execute("DELETE FROM links", [])?;
     tx.execute("DELETE FROM tags", [])?;
     Ok(())
 }
 
-/// Insert a link and its related data
+/// Insert a link and its related data (including notes)
 fn insert_link(tx: &Transaction, link: &Link) -> Result<()> {
     // Insert main link record
     tx.execute(
@@ -533,32 +398,17 @@ fn insert_link(tx: &Transaction, link: &Link) -> Result<()> {
         )?;
     }
 
-    Ok(())
-}
-
-/// Insert a note and its related data
-fn insert_note(tx: &Transaction, note: &Note) -> Result<()> {
-    // Insert main note record
-    tx.execute(
-        r#"
-        INSERT INTO notes (id, title, body, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?)
-        "#,
-        params![
-            note.id.to_string(),
-            note.title,
-            note.body,
-            note.created_at.timestamp_millis(),
-            note.updated_at.timestamp_millis(),
-        ],
-    )?;
-
-    // Insert tags
-    for tag in &note.tags {
-        let tag_id = get_or_create_tag(tx, tag)?;
+    // Insert notes
+    for note in &link.notes {
         tx.execute(
-            "INSERT INTO note_tags (note_id, tag_id) VALUES (?, ?)",
-            params![note.id.to_string(), tag_id],
+            "INSERT INTO notes (id, link_id, title, body, created_at) VALUES (?, ?, ?, ?, ?)",
+            params![
+                note.id.to_string(),
+                link.id.to_string(),
+                note.title,
+                note.body,
+                note.created_at.timestamp_millis(),
+            ],
         )?;
     }
 
@@ -590,12 +440,14 @@ mod tests {
     fn create_test_doc() -> RottDocument {
         let mut doc = RottDocument::new();
 
-        // Add some links
+        // Add some links with notes
         let mut link1 = Link::new("https://rust-lang.org");
         link1.set_title("Rust Programming Language");
         link1.add_tag("programming");
         link1.add_tag("rust");
         link1.set_author(vec!["Mozilla".to_string()]);
+        link1.add_note(Note::new("Great language for systems programming"));
+        link1.add_note(Note::with_title("Memory Safety", "No null pointers!"));
         doc.add_link(&link1).unwrap();
 
         let mut link2 = Link::new("https://example.com");
@@ -603,17 +455,6 @@ mod tests {
         link2.set_description(Some("An example website".to_string()));
         link2.add_tag("example");
         doc.add_link(&link2).unwrap();
-
-        // Add some notes
-        let mut note1 = Note::new("Rust Notes");
-        note1.set_body("Learning Rust today!");
-        note1.add_tag("rust");
-        note1.add_tag("learning");
-        doc.add_note(&note1).unwrap();
-
-        let mut note2 = Note::new("Ideas");
-        note2.set_body("Some project ideas");
-        doc.add_note(&note2).unwrap();
 
         doc
     }
@@ -638,7 +479,7 @@ mod tests {
         let links = projection.get_all_links().unwrap();
         assert_eq!(links.len(), 2);
 
-        // Check that tags and authors are hydrated
+        // Check that tags, authors, and notes are hydrated
         let rust_link = links
             .iter()
             .find(|l| l.url == "https://rust-lang.org")
@@ -647,12 +488,14 @@ mod tests {
         assert!(rust_link.tags.contains(&"rust".to_string()));
         assert!(rust_link.tags.contains(&"programming".to_string()));
         assert_eq!(rust_link.author, vec!["Mozilla"]);
+        assert_eq!(rust_link.notes.len(), 2);
     }
 
     #[test]
     fn test_get_link_by_id() {
         let mut doc = RottDocument::new();
-        let link = Link::new("https://test.com");
+        let mut link = Link::new("https://test.com");
+        link.add_note(Note::new("A test note"));
         let link_id = link.id;
         doc.add_link(&link).unwrap();
 
@@ -661,7 +504,10 @@ mod tests {
 
         let found = projection.get_link(&link_id.to_string()).unwrap();
         assert!(found.is_some());
-        assert_eq!(found.unwrap().url, "https://test.com");
+        let found = found.unwrap();
+        assert_eq!(found.url, "https://test.com");
+        assert_eq!(found.notes.len(), 1);
+        assert_eq!(found.notes[0].body, "A test note");
 
         let not_found = projection
             .get_link(&uuid::Uuid::new_v4().to_string())
@@ -704,61 +550,44 @@ mod tests {
     }
 
     #[test]
-    fn test_get_all_notes() {
-        let doc = create_test_doc();
-        let mut projection = SqliteProjection::open_in_memory().unwrap();
-        projection.project_full(&doc).unwrap();
-
-        let notes = projection.get_all_notes().unwrap();
-        assert_eq!(notes.len(), 2);
-
-        let rust_note = notes.iter().find(|n| n.title == "Rust Notes").unwrap();
-        assert!(rust_note.tags.contains(&"rust".to_string()));
-        assert!(rust_note.tags.contains(&"learning".to_string()));
-    }
-
-    #[test]
-    fn test_get_note_by_id() {
+    fn test_notes_sorted_by_created_at() {
         let mut doc = RottDocument::new();
-        let note = Note::new("Test Note");
-        let note_id = note.id;
-        doc.add_note(&note).unwrap();
+        let mut link = Link::new("https://test.com");
+
+        let note1 = Note::new("First note");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let note2 = Note::new("Second note");
+
+        link.add_note(note1);
+        link.add_note(note2);
+        let link_id = link.id;
+        doc.add_link(&link).unwrap();
 
         let mut projection = SqliteProjection::open_in_memory().unwrap();
         projection.project_full(&doc).unwrap();
 
-        let found = projection.get_note(&note_id.to_string()).unwrap();
-        assert!(found.is_some());
-        assert_eq!(found.unwrap().title, "Test Note");
+        let found = projection.get_link(&link_id.to_string()).unwrap().unwrap();
+        assert_eq!(found.notes.len(), 2);
+        assert_eq!(found.notes[0].body, "First note");
+        assert_eq!(found.notes[1].body, "Second note");
     }
 
     #[test]
-    fn test_get_notes_by_tag() {
-        let doc = create_test_doc();
+    fn test_note_with_optional_title() {
+        let mut doc = RottDocument::new();
+        let mut link = Link::new("https://test.com");
+
+        link.add_note(Note::new("No title"));
+        link.add_note(Note::with_title("Has Title", "With title"));
+        let link_id = link.id;
+        doc.add_link(&link).unwrap();
+
         let mut projection = SqliteProjection::open_in_memory().unwrap();
         projection.project_full(&doc).unwrap();
 
-        let rust_notes = projection.get_notes_by_tag("rust").unwrap();
-        assert_eq!(rust_notes.len(), 1);
-        assert_eq!(rust_notes[0].title, "Rust Notes");
-
-        let learning_notes = projection.get_notes_by_tag("learning").unwrap();
-        assert_eq!(learning_notes.len(), 1);
-    }
-
-    #[test]
-    fn test_search_notes() {
-        let doc = create_test_doc();
-        let mut projection = SqliteProjection::open_in_memory().unwrap();
-        projection.project_full(&doc).unwrap();
-
-        let results = projection.search_notes("Rust").unwrap();
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].title, "Rust Notes");
-
-        let results = projection.search_notes("project ideas").unwrap();
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].title, "Ideas");
+        let found = projection.get_link(&link_id.to_string()).unwrap().unwrap();
+        assert_eq!(found.notes[0].title, None);
+        assert_eq!(found.notes[1].title, Some("Has Title".to_string()));
     }
 
     #[test]
@@ -768,11 +597,10 @@ mod tests {
         projection.project_full(&doc).unwrap();
 
         let tags = projection.get_all_tags().unwrap();
-        // Tags: example, learning, programming, rust (alphabetical)
-        assert_eq!(tags.len(), 4);
+        // Tags: example, programming, rust (alphabetical)
+        assert_eq!(tags.len(), 3);
         assert!(tags.contains(&"rust".to_string()));
         assert!(tags.contains(&"programming".to_string()));
-        assert!(tags.contains(&"learning".to_string()));
         assert!(tags.contains(&"example".to_string()));
     }
 
@@ -784,13 +612,10 @@ mod tests {
 
         let tags = projection.get_tags_with_counts().unwrap();
 
-        // "rust" is used twice (1 link + 1 note)
-        let rust_tag = tags.iter().find(|(name, _)| name == "rust").unwrap();
-        assert_eq!(rust_tag.1, 2);
-
-        // "programming" is used once
-        let prog_tag = tags.iter().find(|(name, _)| name == "programming").unwrap();
-        assert_eq!(prog_tag.1, 1);
+        // Each tag is used once
+        for (_name, count) in &tags {
+            assert_eq!(*count, 1);
+        }
     }
 
     #[test]
@@ -856,6 +681,7 @@ mod tests {
         link.set_description(Some("Description with\nnewlines\tand\ttabs".to_string()));
         link.add_tag("tag-with-dash");
         link.add_tag("tag_with_underscore");
+        link.add_note(Note::new("Note with \"special\" characters"));
         doc.add_link(&link).unwrap();
 
         let mut projection = SqliteProjection::open_in_memory().unwrap();
@@ -864,5 +690,6 @@ mod tests {
         let links = projection.get_all_links().unwrap();
         assert_eq!(links[0].title, "Test \"quotes\" and 'apostrophes'");
         assert!(links[0].description.as_ref().unwrap().contains('\n'));
+        assert_eq!(links[0].notes[0].body, "Note with \"special\" characters");
     }
 }

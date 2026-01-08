@@ -1,11 +1,70 @@
 //! Data models for ROTT
 //!
-//! Defines the core data structures: Link, Note, and Tag.
+//! Defines the core data structures: Link and Note.
+//! Notes are children of Links, serving as annotations or comments.
 //! These models are designed to work with Automerge for CRDT-based sync.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+/// A note attached to a link
+///
+/// Notes serve as annotations, comments, or supplementary information
+/// for saved links. They cannot exist independently.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Note {
+    /// Unique identifier
+    pub id: Uuid,
+    /// Optional title for the note
+    pub title: Option<String>,
+    /// Note body content
+    pub body: String,
+    /// When this note was created
+    pub created_at: DateTime<Utc>,
+}
+
+impl Note {
+    /// Create a new note with just a body
+    pub fn new(body: impl Into<String>) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            title: None,
+            body: body.into(),
+            created_at: Utc::now(),
+        }
+    }
+
+    /// Create a new note with a title and body
+    pub fn with_title(title: impl Into<String>, body: impl Into<String>) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            title: Some(title.into()),
+            body: body.into(),
+            created_at: Utc::now(),
+        }
+    }
+
+    /// Create a note with a specific ID (for loading from storage)
+    pub fn with_id(id: Uuid, body: impl Into<String>) -> Self {
+        Self {
+            id,
+            title: None,
+            body: body.into(),
+            created_at: Utc::now(),
+        }
+    }
+
+    /// Set the title
+    pub fn set_title(&mut self, title: Option<String>) {
+        self.title = title;
+    }
+
+    /// Set the body
+    pub fn set_body(&mut self, body: impl Into<String>) {
+        self.body = body.into();
+    }
+}
 
 /// A saved link with metadata
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -26,6 +85,8 @@ pub struct Link {
     pub created_at: DateTime<Utc>,
     /// When this link was last updated
     pub updated_at: DateTime<Utc>,
+    /// Notes/annotations attached to this link
+    pub notes: Vec<Note>,
 }
 
 impl Link {
@@ -42,6 +103,7 @@ impl Link {
             tags: Vec::new(),
             created_at: now,
             updated_at: now,
+            notes: Vec::new(),
         }
     }
 
@@ -58,6 +120,7 @@ impl Link {
             tags: Vec::new(),
             created_at: now,
             updated_at: now,
+            notes: Vec::new(),
         }
     }
 
@@ -101,89 +164,40 @@ impl Link {
         self.tags = tags;
         self.updated_at = Utc::now();
     }
-}
 
-/// A text note
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Note {
-    /// Unique identifier
-    pub id: Uuid,
-    /// Note title
-    pub title: String,
-    /// Note body content
-    pub body: String,
-    /// Tags for organization
-    pub tags: Vec<String>,
-    /// When this note was created
-    pub created_at: DateTime<Utc>,
-    /// When this note was last updated
-    pub updated_at: DateTime<Utc>,
-}
-
-impl Note {
-    /// Create a new note with the given title
-    pub fn new(title: impl Into<String>) -> Self {
-        let now = Utc::now();
-        Self {
-            id: Uuid::new_v4(),
-            title: title.into(),
-            body: String::new(),
-            tags: Vec::new(),
-            created_at: now,
-            updated_at: now,
-        }
-    }
-
-    /// Create a note with a specific ID (for loading from storage)
-    pub fn with_id(id: Uuid, title: impl Into<String>) -> Self {
-        let now = Utc::now();
-        Self {
-            id,
-            title: title.into(),
-            body: String::new(),
-            tags: Vec::new(),
-            created_at: now,
-            updated_at: now,
-        }
-    }
-
-    /// Update the title
-    pub fn set_title(&mut self, title: impl Into<String>) {
-        self.title = title.into();
+    /// Add a note to this link
+    pub fn add_note(&mut self, note: Note) {
+        self.notes.push(note);
         self.updated_at = Utc::now();
     }
 
-    /// Update the body
-    pub fn set_body(&mut self, body: impl Into<String>) {
-        self.body = body.into();
-        self.updated_at = Utc::now();
+    /// Get a note by ID
+    pub fn get_note(&self, id: Uuid) -> Option<&Note> {
+        self.notes.iter().find(|n| n.id == id)
     }
 
-    /// Add a tag
-    pub fn add_tag(&mut self, tag: impl Into<String>) {
-        let tag = tag.into();
-        if !self.tags.contains(&tag) {
-            self.tags.push(tag);
+    /// Get a mutable note by ID
+    pub fn get_note_mut(&mut self, id: Uuid) -> Option<&mut Note> {
+        self.notes.iter_mut().find(|n| n.id == id)
+    }
+
+    /// Remove a note by ID
+    pub fn remove_note(&mut self, id: Uuid) -> Option<Note> {
+        if let Some(pos) = self.notes.iter().position(|n| n.id == id) {
             self.updated_at = Utc::now();
+            Some(self.notes.remove(pos))
+        } else {
+            None
         }
     }
 
-    /// Remove a tag
-    pub fn remove_tag(&mut self, tag: &str) {
-        if let Some(pos) = self.tags.iter().position(|t| t == tag) {
-            self.tags.remove(pos);
-            self.updated_at = Utc::now();
-        }
-    }
-
-    /// Set all tags (replacing existing)
-    pub fn set_tags(&mut self, tags: Vec<String>) {
-        self.tags = tags;
-        self.updated_at = Utc::now();
+    /// Get all notes
+    pub fn notes(&self) -> &[Note] {
+        &self.notes
     }
 }
 
-/// A tag for organizing links and notes
+/// A tag for organizing links
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Tag(pub String);
 
@@ -229,6 +243,7 @@ mod tests {
         assert!(link.tags.is_empty());
         assert!(link.author.is_empty());
         assert!(link.description.is_none());
+        assert!(link.notes.is_empty());
     }
 
     #[test]
@@ -266,36 +281,65 @@ mod tests {
 
     #[test]
     fn test_note_new() {
-        let note = Note::new("Test Note");
-        assert_eq!(note.title, "Test Note");
-        assert!(note.body.is_empty());
-        assert!(note.tags.is_empty());
+        let note = Note::new("This is a comment");
+        assert!(note.title.is_none());
+        assert_eq!(note.body, "This is a comment");
+    }
+
+    #[test]
+    fn test_note_with_title() {
+        let note = Note::with_title("My Title", "Note body");
+        assert_eq!(note.title, Some("My Title".to_string()));
+        assert_eq!(note.body, "Note body");
     }
 
     #[test]
     fn test_note_with_id() {
         let id = Uuid::new_v4();
-        let note = Note::with_id(id, "Test Note");
+        let note = Note::with_id(id, "Body content");
         assert_eq!(note.id, id);
-        assert_eq!(note.title, "Test Note");
+        assert_eq!(note.body, "Body content");
     }
 
     #[test]
-    fn test_note_set_body() {
-        let mut note = Note::new("Test Note");
-        note.set_body("This is the note content.");
-        assert_eq!(note.body, "This is the note content.");
+    fn test_link_add_note() {
+        let mut link = Link::new("https://example.com");
+        let note = Note::new("Great article!");
+        let note_id = note.id;
+
+        link.add_note(note);
+
+        assert_eq!(link.notes.len(), 1);
+        assert!(link.get_note(note_id).is_some());
     }
 
     #[test]
-    fn test_note_tags() {
-        let mut note = Note::new("Test Note");
-        note.add_tag("idea");
-        note.add_tag("project");
-        assert_eq!(note.tags, vec!["idea", "project"]);
+    fn test_link_remove_note() {
+        let mut link = Link::new("https://example.com");
+        let note = Note::new("To be removed");
+        let note_id = note.id;
 
-        note.set_tags(vec!["new-tag".to_string()]);
-        assert_eq!(note.tags, vec!["new-tag"]);
+        link.add_note(note);
+        assert_eq!(link.notes.len(), 1);
+
+        let removed = link.remove_note(note_id);
+        assert!(removed.is_some());
+        assert_eq!(link.notes.len(), 0);
+    }
+
+    #[test]
+    fn test_link_get_note_mut() {
+        let mut link = Link::new("https://example.com");
+        let note = Note::new("Original body");
+        let note_id = note.id;
+
+        link.add_note(note);
+
+        if let Some(note) = link.get_note_mut(note_id) {
+            note.set_body("Updated body");
+        }
+
+        assert_eq!(link.get_note(note_id).unwrap().body, "Updated body");
     }
 
     #[test]
@@ -314,7 +358,8 @@ mod tests {
 
     #[test]
     fn test_link_serialization() {
-        let link = Link::new("https://example.com");
+        let mut link = Link::new("https://example.com");
+        link.add_note(Note::new("A note"));
         let json = serde_json::to_string(&link).unwrap();
         let deserialized: Link = serde_json::from_str(&json).unwrap();
         assert_eq!(link, deserialized);
@@ -322,9 +367,7 @@ mod tests {
 
     #[test]
     fn test_note_serialization() {
-        let mut note = Note::new("Test Note");
-        note.set_body("Content");
-        note.add_tag("test");
+        let note = Note::with_title("Title", "Content");
         let json = serde_json::to_string(&note).unwrap();
         let deserialized: Note = serde_json::from_str(&json).unwrap();
         assert_eq!(note, deserialized);

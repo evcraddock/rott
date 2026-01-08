@@ -2,6 +2,24 @@
 //!
 //! This module provides the integration between our domain models (Link, Note)
 //! and Automerge documents. It handles serialization to/from Automerge format.
+//!
+//! Document structure:
+//! ```text
+//! {
+//!   schema_version: 2,
+//!   root_doc_id: "...",
+//!   links: {
+//!     "<uuid>": {
+//!       id, title, url, description, author, tags, created_at, updated_at,
+//!       notes: {
+//!         "<uuid>": { id, title, body, created_at },
+//!         ...
+//!       }
+//!     },
+//!     ...
+//!   }
+//! }
+//! ```
 
 use automerge::{transaction::Transactable, AutoCommit, ObjType, ReadDoc, ROOT};
 use chrono::{DateTime, TimeZone, Utc};
@@ -37,7 +55,7 @@ mod keys {
     pub const SCHEMA_VERSION: &str = "schema_version";
     pub const ROOT_DOC_ID: &str = "root_doc_id";
 
-    // Link/Note fields
+    // Link fields
     pub const ID: &str = "id";
     pub const TITLE: &str = "title";
     pub const URL: &str = "url";
@@ -49,8 +67,8 @@ mod keys {
     pub const UPDATED_AT: &str = "updated_at";
 }
 
-/// Current schema version
-pub const CURRENT_SCHEMA_VERSION: u64 = 1;
+/// Current schema version (bumped for notes-as-children change)
+pub const CURRENT_SCHEMA_VERSION: u64 = 2;
 
 /// A ROTT document backed by Automerge
 pub struct RottDocument {
@@ -77,8 +95,6 @@ impl RottDocument {
             .expect("Failed to set root doc ID");
         doc.put_object(ROOT, keys::LINKS, ObjType::Map)
             .expect("Failed to create links map");
-        doc.put_object(ROOT, keys::NOTES, ObjType::Map)
-            .expect("Failed to create notes map");
 
         Self { id, doc }
     }
@@ -230,109 +246,90 @@ impl RottDocument {
             .collect())
     }
 
-    // ==================== Notes ====================
+    // ==================== Notes (as children of links) ====================
 
-    /// Add a new note to the document
-    pub fn add_note(&mut self, note: &Note) -> Result<(), DocumentError> {
-        let notes_id = self
+    /// Add a note to a link
+    pub fn add_note_to_link(&mut self, link_id: Uuid, note: &Note) -> Result<(), DocumentError> {
+        let links_id = self
             .doc
-            .get(ROOT, keys::NOTES)?
-            .ok_or_else(|| DocumentError::MissingField("notes".to_string()))?
+            .get(ROOT, keys::LINKS)?
+            .ok_or_else(|| DocumentError::MissingField("links".to_string()))?
             .1;
 
-        let note_id = self
+        let link_obj_id = self
+            .doc
+            .get(&links_id, link_id.to_string())?
+            .ok_or_else(|| DocumentError::MissingField(format!("link {}", link_id)))?
+            .1;
+
+        // Get or create notes map for this link
+        let notes_id = match self.doc.get(&link_obj_id, keys::NOTES)? {
+            Some((_, id)) => id,
+            None => self
+                .doc
+                .put_object(&link_obj_id, keys::NOTES, ObjType::Map)?,
+        };
+
+        let note_obj_id = self
             .doc
             .put_object(&notes_id, note.id.to_string(), ObjType::Map)?;
 
-        self.write_note_fields(&note_id, note)?;
+        self.write_note_fields(&note_obj_id, note)?;
+
+        // Update link's updated_at
+        self.doc.put(
+            &link_obj_id,
+            keys::UPDATED_AT,
+            Utc::now().timestamp_millis(),
+        )?;
+
         Ok(())
     }
 
-    /// Update an existing note
-    pub fn update_note(&mut self, note: &Note) -> Result<(), DocumentError> {
+    /// Remove a note from a link
+    pub fn remove_note_from_link(
+        &mut self,
+        link_id: Uuid,
+        note_id: Uuid,
+    ) -> Result<(), DocumentError> {
+        let links_id = self
+            .doc
+            .get(ROOT, keys::LINKS)?
+            .ok_or_else(|| DocumentError::MissingField("links".to_string()))?
+            .1;
+
+        let link_obj_id = self
+            .doc
+            .get(&links_id, link_id.to_string())?
+            .ok_or_else(|| DocumentError::MissingField(format!("link {}", link_id)))?
+            .1;
+
         let notes_id = self
             .doc
-            .get(ROOT, keys::NOTES)?
-            .ok_or_else(|| DocumentError::MissingField("notes".to_string()))?
+            .get(&link_obj_id, keys::NOTES)?
+            .ok_or_else(|| DocumentError::MissingField(format!("notes for link {}", link_id)))?
             .1;
 
-        let note_id = self
-            .doc
-            .get(&notes_id, note.id.to_string())?
-            .ok_or_else(|| DocumentError::MissingField(format!("note {}", note.id)))?
-            .1;
+        self.doc.delete(&notes_id, note_id.to_string())?;
 
-        self.write_note_fields(&note_id, note)?;
+        // Update link's updated_at
+        self.doc.put(
+            &link_obj_id,
+            keys::UPDATED_AT,
+            Utc::now().timestamp_millis(),
+        )?;
+
         Ok(())
-    }
-
-    /// Delete a note from the document
-    pub fn delete_note(&mut self, id: Uuid) -> Result<(), DocumentError> {
-        let notes_id = self
-            .doc
-            .get(ROOT, keys::NOTES)?
-            .ok_or_else(|| DocumentError::MissingField("notes".to_string()))?
-            .1;
-
-        self.doc.delete(&notes_id, id.to_string())?;
-        Ok(())
-    }
-
-    /// Get a note by ID
-    pub fn get_note(&self, id: Uuid) -> Result<Option<Note>, DocumentError> {
-        let notes_id = self
-            .doc
-            .get(ROOT, keys::NOTES)?
-            .ok_or_else(|| DocumentError::MissingField("notes".to_string()))?
-            .1;
-
-        match self.doc.get(&notes_id, id.to_string())? {
-            Some((_, note_id)) => Ok(Some(self.read_note(&note_id, id)?)),
-            None => Ok(None),
-        }
-    }
-
-    /// Get all notes
-    pub fn get_all_notes(&self) -> Result<Vec<Note>, DocumentError> {
-        let notes_id = self
-            .doc
-            .get(ROOT, keys::NOTES)?
-            .ok_or_else(|| DocumentError::MissingField("notes".to_string()))?
-            .1;
-
-        let mut notes = Vec::new();
-        for key in self.doc.keys(&notes_id) {
-            let id = Uuid::parse_str(&key).map_err(|_| DocumentError::InvalidUuid(key.clone()))?;
-            if let Some((_, note_id)) = self.doc.get(&notes_id, &key)? {
-                notes.push(self.read_note(&note_id, id)?);
-            }
-        }
-        Ok(notes)
-    }
-
-    /// Get notes filtered by tag
-    pub fn get_notes_by_tag(&self, tag: &str) -> Result<Vec<Note>, DocumentError> {
-        let all_notes = self.get_all_notes()?;
-        Ok(all_notes
-            .into_iter()
-            .filter(|note| note.tags.iter().any(|t| t == tag))
-            .collect())
     }
 
     // ==================== Tags ====================
 
-    /// Get all unique tags from links and notes
+    /// Get all unique tags from links
     pub fn get_all_tags(&self) -> Result<Vec<String>, DocumentError> {
         let mut tags = std::collections::HashSet::new();
 
         for link in self.get_all_links()? {
             for tag in link.tags {
-                tags.insert(tag);
-            }
-        }
-
-        for note in self.get_all_notes()? {
-            for tag in note.tags {
                 tags.insert(tag);
             }
         }
@@ -374,6 +371,15 @@ impl RottDocument {
         self.doc
             .put(obj_id, keys::UPDATED_AT, link.updated_at.timestamp_millis())?;
 
+        // Write notes map
+        let notes_id = self.doc.put_object(obj_id, keys::NOTES, ObjType::Map)?;
+        for note in &link.notes {
+            let note_obj_id = self
+                .doc
+                .put_object(&notes_id, note.id.to_string(), ObjType::Map)?;
+            self.write_note_fields(&note_obj_id, note)?;
+        }
+
         Ok(())
     }
 
@@ -386,6 +392,9 @@ impl RottDocument {
         let created_at = self.get_timestamp(obj_id, keys::CREATED_AT)?;
         let updated_at = self.get_timestamp(obj_id, keys::UPDATED_AT)?;
 
+        // Read notes
+        let notes = self.read_notes_for_link(obj_id)?;
+
         Ok(Link {
             id,
             title,
@@ -395,7 +404,30 @@ impl RottDocument {
             tags,
             created_at,
             updated_at,
+            notes,
         })
+    }
+
+    fn read_notes_for_link(
+        &self,
+        link_obj_id: &automerge::ObjId,
+    ) -> Result<Vec<Note>, DocumentError> {
+        let notes_id = match self.doc.get(link_obj_id, keys::NOTES)? {
+            Some((_, id)) => id,
+            None => return Ok(Vec::new()),
+        };
+
+        let mut notes = Vec::new();
+        for key in self.doc.keys(&notes_id) {
+            let id = Uuid::parse_str(&key).map_err(|_| DocumentError::InvalidUuid(key.clone()))?;
+            if let Some((_, note_obj_id)) = self.doc.get(&notes_id, &key)? {
+                notes.push(self.read_note(&note_obj_id, id)?);
+            }
+        }
+
+        // Sort by created_at
+        notes.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+        Ok(notes)
     }
 
     fn write_note_fields(
@@ -404,37 +436,28 @@ impl RottDocument {
         note: &Note,
     ) -> Result<(), DocumentError> {
         self.doc.put(obj_id, keys::ID, note.id.to_string())?;
-        self.doc.put(obj_id, keys::TITLE, note.title.clone())?;
-        self.doc.put(obj_id, keys::BODY, note.body.clone())?;
 
-        // Write tags array
-        let tags_id = self.doc.put_object(obj_id, keys::TAGS, ObjType::List)?;
-        for (i, tag) in note.tags.iter().enumerate() {
-            self.doc.insert(&tags_id, i, tag.clone())?;
+        if let Some(ref title) = note.title {
+            self.doc.put(obj_id, keys::TITLE, title.clone())?;
         }
 
+        self.doc.put(obj_id, keys::BODY, note.body.clone())?;
         self.doc
             .put(obj_id, keys::CREATED_AT, note.created_at.timestamp_millis())?;
-        self.doc
-            .put(obj_id, keys::UPDATED_AT, note.updated_at.timestamp_millis())?;
 
         Ok(())
     }
 
     fn read_note(&self, obj_id: &automerge::ObjId, id: Uuid) -> Result<Note, DocumentError> {
-        let title = self.get_string(obj_id, keys::TITLE)?;
+        let title = self.get_optional_string(obj_id, keys::TITLE)?;
         let body = self.get_string(obj_id, keys::BODY)?;
-        let tags = self.get_string_list(obj_id, keys::TAGS)?;
         let created_at = self.get_timestamp(obj_id, keys::CREATED_AT)?;
-        let updated_at = self.get_timestamp(obj_id, keys::UPDATED_AT)?;
 
         Ok(Note {
             id,
             title,
             body,
-            tags,
             created_at,
-            updated_at,
         })
     }
 
@@ -514,7 +537,6 @@ mod tests {
     fn test_new_document() {
         let doc = RottDocument::new();
         assert!(doc.get_all_links().unwrap().is_empty());
-        assert!(doc.get_all_notes().unwrap().is_empty());
     }
 
     #[test]
@@ -531,6 +553,7 @@ mod tests {
         assert_eq!(retrieved.title, "Example Site");
         assert_eq!(retrieved.url, "https://example.com");
         assert_eq!(retrieved.tags, vec!["test"]);
+        assert!(retrieved.notes.is_empty());
     }
 
     #[test]
@@ -589,92 +612,95 @@ mod tests {
     }
 
     #[test]
-    fn test_add_and_get_note() {
+    fn test_add_note_to_link() {
         let mut doc = RottDocument::new();
-        let mut note = Note::new("Test Note");
-        note.set_body("This is the body");
-        note.add_tag("idea");
+        let link = Link::new("https://example.com");
+        doc.add_link(&link).unwrap();
 
-        doc.add_note(&note).unwrap();
+        let note = Note::new("Great article!");
+        doc.add_note_to_link(link.id, &note).unwrap();
 
-        let retrieved = doc.get_note(note.id).unwrap().unwrap();
-        assert_eq!(retrieved.id, note.id);
-        assert_eq!(retrieved.title, "Test Note");
-        assert_eq!(retrieved.body, "This is the body");
-        assert_eq!(retrieved.tags, vec!["idea"]);
+        let retrieved = doc.get_link(link.id).unwrap().unwrap();
+        assert_eq!(retrieved.notes.len(), 1);
+        assert_eq!(retrieved.notes[0].body, "Great article!");
     }
 
     #[test]
-    fn test_update_note() {
+    fn test_add_note_with_title() {
         let mut doc = RottDocument::new();
-        let mut note = Note::new("Test Note");
-        doc.add_note(&note).unwrap();
+        let link = Link::new("https://example.com");
+        doc.add_link(&link).unwrap();
 
-        note.set_title("Updated Title");
-        note.set_body("Updated body");
-        note.add_tag("updated");
-        doc.update_note(&note).unwrap();
+        let note = Note::with_title("Summary", "This article covers...");
+        doc.add_note_to_link(link.id, &note).unwrap();
 
-        let retrieved = doc.get_note(note.id).unwrap().unwrap();
-        assert_eq!(retrieved.title, "Updated Title");
-        assert_eq!(retrieved.body, "Updated body");
-        assert!(retrieved.tags.contains(&"updated".to_string()));
+        let retrieved = doc.get_link(link.id).unwrap().unwrap();
+        assert_eq!(retrieved.notes.len(), 1);
+        assert_eq!(retrieved.notes[0].title, Some("Summary".to_string()));
+        assert_eq!(retrieved.notes[0].body, "This article covers...");
     }
 
     #[test]
-    fn test_delete_note() {
+    fn test_remove_note_from_link() {
         let mut doc = RottDocument::new();
-        let note = Note::new("Test Note");
-        doc.add_note(&note).unwrap();
+        let link = Link::new("https://example.com");
+        doc.add_link(&link).unwrap();
 
-        doc.delete_note(note.id).unwrap();
+        let note = Note::new("To be removed");
+        let note_id = note.id;
+        doc.add_note_to_link(link.id, &note).unwrap();
 
-        assert!(doc.get_note(note.id).unwrap().is_none());
+        doc.remove_note_from_link(link.id, note_id).unwrap();
+
+        let retrieved = doc.get_link(link.id).unwrap().unwrap();
+        assert!(retrieved.notes.is_empty());
     }
 
     #[test]
-    fn test_get_all_notes() {
+    fn test_multiple_notes_sorted() {
         let mut doc = RottDocument::new();
-        let note1 = Note::new("Note 1");
-        let note2 = Note::new("Note 2");
+        let link = Link::new("https://example.com");
+        doc.add_link(&link).unwrap();
 
-        doc.add_note(&note1).unwrap();
-        doc.add_note(&note2).unwrap();
+        let note1 = Note::new("First note");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let note2 = Note::new("Second note");
 
-        let notes = doc.get_all_notes().unwrap();
-        assert_eq!(notes.len(), 2);
+        doc.add_note_to_link(link.id, &note1).unwrap();
+        doc.add_note_to_link(link.id, &note2).unwrap();
+
+        let retrieved = doc.get_link(link.id).unwrap().unwrap();
+        assert_eq!(retrieved.notes.len(), 2);
+        assert_eq!(retrieved.notes[0].body, "First note");
+        assert_eq!(retrieved.notes[1].body, "Second note");
     }
 
     #[test]
-    fn test_get_notes_by_tag() {
+    fn test_link_with_notes_roundtrip() {
         let mut doc = RottDocument::new();
-        let mut note1 = Note::new("Rust Note");
-        note1.add_tag("rust");
-        let mut note2 = Note::new("Python Note");
-        note2.add_tag("python");
+        let mut link = Link::new("https://example.com");
+        link.add_note(Note::new("Inline note"));
+        doc.add_link(&link).unwrap();
 
-        doc.add_note(&note1).unwrap();
-        doc.add_note(&note2).unwrap();
-
-        let rust_notes = doc.get_notes_by_tag("rust").unwrap();
-        assert_eq!(rust_notes.len(), 1);
-        assert_eq!(rust_notes[0].title, "Rust Note");
+        let retrieved = doc.get_link(link.id).unwrap().unwrap();
+        assert_eq!(retrieved.notes.len(), 1);
+        assert_eq!(retrieved.notes[0].body, "Inline note");
     }
 
     #[test]
     fn test_get_all_tags() {
         let mut doc = RottDocument::new();
 
-        let mut link = Link::new("https://example.com");
-        link.add_tag("web");
-        link.add_tag("rust");
+        let mut link1 = Link::new("https://example.com");
+        link1.add_tag("web");
+        link1.add_tag("rust");
 
-        let mut note = Note::new("Note");
-        note.add_tag("rust");
-        note.add_tag("idea");
+        let mut link2 = Link::new("https://example2.com");
+        link2.add_tag("rust");
+        link2.add_tag("idea");
 
-        doc.add_link(&link).unwrap();
-        doc.add_note(&note).unwrap();
+        doc.add_link(&link1).unwrap();
+        doc.add_link(&link2).unwrap();
 
         let tags = doc.get_all_tags().unwrap();
         assert_eq!(tags, vec!["idea", "rust", "web"]);
@@ -684,7 +710,8 @@ mod tests {
     fn test_save_and_load() {
         let mut doc = RottDocument::new();
         let original_id = *doc.id();
-        let link = Link::new("https://example.com");
+        let mut link = Link::new("https://example.com");
+        link.add_note(Note::new("A note"));
         doc.add_link(&link).unwrap();
 
         let bytes = doc.save();
@@ -694,6 +721,7 @@ mod tests {
         let links = loaded.get_all_links().unwrap();
         assert_eq!(links.len(), 1);
         assert_eq!(links[0].url, "https://example.com");
+        assert_eq!(links[0].notes.len(), 1);
     }
 
     #[test]
