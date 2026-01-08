@@ -151,7 +151,7 @@ impl App {
             command_cursor: 0,
             active_pane: ActivePane::Items,
             filters,
-            filter_index: 1, // Start on "Recent"
+            filter_index: 0, // Start on "Favorites"
             tags_expanded: false,
             all_tags,
             all_links,
