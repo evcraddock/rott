@@ -1,0 +1,20 @@
+[package]
+name = "rott-tui"
+description = "Terminal user interface for ROTT"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "rott-tui"
+path = "src/main.rs"
+
+[dependencies]
+rott-core.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

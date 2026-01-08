@@ -17,27 +17,27 @@ pub struct UrlMetadata {
 /// Fetch timeout in seconds
 const FETCH_TIMEOUT: u64 = 10;
 
-/// Fetch metadata from a URL
+/// Fetch metadata from a URL (async)
 ///
 /// Returns empty metadata on failure (graceful degradation).
-pub fn fetch_metadata(url: &str) -> UrlMetadata {
-    fetch_metadata_inner(url).unwrap_or_default()
+pub async fn fetch_metadata(url: &str) -> UrlMetadata {
+    fetch_metadata_inner(url).await.unwrap_or_default()
 }
 
 /// Inner fetch function that can fail
-fn fetch_metadata_inner(url: &str) -> Result<UrlMetadata> {
-    let client = reqwest::blocking::Client::builder()
+async fn fetch_metadata_inner(url: &str) -> Result<UrlMetadata> {
+    let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(FETCH_TIMEOUT))
         .user_agent("Mozilla/5.0 (compatible; ROTT/1.0)")
         .build()?;
 
-    let response = client.get(url).send()?;
+    let response = client.get(url).send().await?;
 
     if !response.status().is_success() {
         return Ok(UrlMetadata::default());
     }
 
-    let html = response.text()?;
+    let html = response.text().await?;
     Ok(parse_metadata(&html))
 }
 

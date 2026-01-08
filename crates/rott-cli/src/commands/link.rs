@@ -10,9 +10,9 @@ use crate::metadata::fetch_metadata;
 use crate::output::Output;
 
 /// Create a new link
-pub fn create(store: &mut Store, url: String, tags: Vec<String>, output: &Output) -> Result<()> {
+pub async fn create(store: &mut Store, url: String, tags: Vec<String>, output: &Output) -> Result<()> {
     // Fetch metadata from URL
-    let metadata = fetch_metadata(&url);
+    let metadata = fetch_metadata(&url).await;
 
     let mut link = Link::new(&url);
 

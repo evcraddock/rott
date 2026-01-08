@@ -1,0 +1,5 @@
+[alias]
+# Run clippy with strict lints
+lint = "clippy --all-targets --all-features -- -D warnings"
+# Run all tests
+test-all = "test --all-targets --all-features"

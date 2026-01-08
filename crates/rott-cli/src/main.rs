@@ -178,7 +178,7 @@ async fn main() -> Result<()> {
     let mut store = Store::open()?;
 
     match cli.command.unwrap() {
-        Commands::Link { command } => handle_link_command(command, &mut store, &output),
+        Commands::Link { command } => handle_link_command(command, &mut store, &output).await,
         Commands::Note { command } => handle_note_command(command, &mut store, &output),
         Commands::Tags => commands::tag::list(&store, &output),
         Commands::Config { .. } => unreachable!(), // Handled above
@@ -187,9 +187,9 @@ async fn main() -> Result<()> {
     }
 }
 
-fn handle_link_command(command: LinkCommands, store: &mut Store, output: &Output) -> Result<()> {
+async fn handle_link_command(command: LinkCommands, store: &mut Store, output: &Output) -> Result<()> {
     match command {
-        LinkCommands::Create { url, tag } => commands::link::create(store, url, tag, output),
+        LinkCommands::Create { url, tag } => commands::link::create(store, url, tag, output).await,
         LinkCommands::List { tag } => commands::link::list(store, tag, output),
         LinkCommands::Show { id } => commands::link::show(store, id, output),
         LinkCommands::Edit { id } => commands::link::edit(store, id, output),
