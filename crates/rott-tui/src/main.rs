@@ -351,10 +351,17 @@ async fn handle_command_mode<B: Backend>(
                     terminal.draw(|frame| ui::draw(frame, app))?;
 
                     let metadata = metadata::fetch_metadata(&url).await;
-                    app.add_link(store, &url, metadata)?;
-                    app.is_loading = false;
-
-                    return Ok(Some(true)); // Needs push
+                    match app.add_link(store, &url, metadata) {
+                        Ok(_) => {
+                            app.is_loading = false;
+                            return Ok(Some(true)); // Needs push
+                        }
+                        Err(e) => {
+                            app.is_loading = false;
+                            app.set_status(format!("Error: {}", e));
+                            return Ok(Some(false));
+                        }
+                    }
                 }
                 CommandResult::NeedEditor(task) => {
                     // Exit TUI temporarily for editor
