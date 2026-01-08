@@ -264,17 +264,26 @@ fn handle_command_mode<B: Backend>(
                     match task {
                         EditorTask::Note => {
                             let content = editor::edit_text("# Note\n\nEnter your note here...")?;
-                            let body = content.trim();
-                            if !body.is_empty() && !body.starts_with("# Note") {
-                                // Re-enter TUI before modifying store
-                                enable_raw_mode()?;
-                                stdout().execute(EnterAlternateScreen)?;
-                                app.add_note_to_current(store, body)?;
+                            // Remove template lines and extract actual note content
+                            let body: String = content
+                                .lines()
+                                .filter(|line| {
+                                    let trimmed = line.trim();
+                                    !trimmed.starts_with('#') && trimmed != "Enter your note here..."
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n")
+                                .trim()
+                                .to_string();
+                            
+                            // Re-enter TUI
+                            enable_raw_mode()?;
+                            stdout().execute(EnterAlternateScreen)?;
+                            
+                            if !body.is_empty() {
+                                app.add_note_to_current(store, &body)?;
                             } else {
-                                // Re-enter TUI
-                                enable_raw_mode()?;
-                                stdout().execute(EnterAlternateScreen)?;
-                                app.status_message = Some("Note cancelled".to_string());
+                                app.status_message = Some("Note cancelled (empty)".to_string());
                             }
                         }
                         EditorTask::EditLink => {

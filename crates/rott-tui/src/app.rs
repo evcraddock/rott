@@ -1,6 +1,7 @@
 //! Application state and logic
 
 use rott_core::{Link, Note, Store};
+use std::process::{Command, Stdio};
 
 /// Input mode for the application
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -246,15 +247,17 @@ impl App {
                 }
             }
             ActivePane::Items => {
-                // Open link in browser using detached process
-                // (detached works better when running in TUI with raw mode)
+                // Open link in browser
                 if let Some(link) = self.current_link() {
                     let url = link.url.clone();
                     let title = link.title.clone();
-                    if let Err(e) = open::that_detached(&url) {
-                        self.status_message = Some(format!("Failed to open: {}", e));
-                    } else {
-                        self.status_message = Some(format!("Opened '{}'", title));
+                    match open_url(&url) {
+                        Ok(_) => {
+                            self.status_message = Some(format!("Opened '{}'", title));
+                        }
+                        Err(e) => {
+                            self.status_message = Some(format!("Failed to open: {}", e));
+                        }
                     }
                 }
             }
@@ -583,6 +586,34 @@ pub enum EditorTask {
     Note,
     /// Edit link details
     EditLink,
+}
+
+/// Open a URL in the default browser
+///
+/// Uses xdg-open on Linux, open on macOS, start on Windows.
+/// Spawns as a detached process with null stdio to avoid
+/// interfering with the TUI.
+fn open_url(url: &str) -> std::io::Result<()> {
+    #[cfg(target_os = "linux")]
+    let mut cmd = Command::new("xdg-open");
+    
+    #[cfg(target_os = "macos")]
+    let mut cmd = Command::new("open");
+    
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = Command::new("cmd");
+        c.args(["/C", "start", ""]);
+        c
+    };
+    
+    cmd.arg(url)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+    
+    Ok(())
 }
 
 #[cfg(test)]
