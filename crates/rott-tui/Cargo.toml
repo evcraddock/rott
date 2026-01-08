@@ -17,6 +17,10 @@ crossterm.workspace = true
 anyhow.workspace = true
 chrono.workspace = true
 open.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+scraper.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

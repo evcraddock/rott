@@ -2,13 +2,13 @@
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
     Frame,
 };
 
-use crate::app::{ActivePane, App, Filter};
+use crate::app::{ActivePane, App, Filter, InputMode};
 
 /// Main UI rendering function
 pub fn draw(frame: &mut Frame, app: &App) {
@@ -32,7 +32,13 @@ pub fn draw(frame: &mut Frame, app: &App) {
     draw_filters_pane(frame, app, pane_chunks[0]);
     draw_items_pane(frame, app, pane_chunks[1]);
     draw_detail_pane(frame, app, pane_chunks[2]);
-    draw_status_bar(frame, app, outer_chunks[1]);
+
+    // Draw status bar or command input
+    match app.input_mode {
+        InputMode::Normal => draw_status_bar(frame, app, outer_chunks[1]),
+        InputMode::Command => draw_command_input(frame, app, outer_chunks[1]),
+        InputMode::Filter => draw_filter_input(frame, app, outer_chunks[1]),
+    }
 }
 
 /// Draw the filters pane (left)
@@ -267,13 +273,56 @@ fn draw_detail_pane(frame: &mut Frame, app: &App, area: Rect) {
 
 /// Draw the status bar at the bottom
 fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
-    let content = if let Some(msg) = &app.status_message {
+    let content = if app.is_loading {
+        "Adding link...".to_string()
+    } else if let Some(msg) = &app.status_message {
         msg.clone()
     } else {
-        "j/k:nav  h/l:pane  Enter:select/open  Tab:next pane  q:quit  ?:help".to_string()
+        "a:add  t:tag  n:note  e:edit  d:del  u:undo  /:filter  ?:help  q:quit".to_string()
     };
 
     let paragraph = Paragraph::new(content).style(Style::default().add_modifier(Modifier::DIM));
 
     frame.render_widget(paragraph, area);
+}
+
+/// Draw command input at the bottom
+fn draw_command_input(frame: &mut Frame, app: &App, area: Rect) {
+    // Build the input line with cursor
+    let prefix = ":";
+    let input = &app.command_input;
+
+    let line = Line::from(vec![
+        Span::styled(prefix, Style::default().fg(Color::Yellow)),
+        Span::raw(input.as_str()),
+    ]);
+
+    let paragraph = Paragraph::new(line);
+    frame.render_widget(paragraph, area);
+
+    // Position cursor
+    let cursor_x = area.x + prefix.len() as u16 + app.command_cursor as u16;
+    frame.set_cursor_position((cursor_x, area.y));
+}
+
+/// Draw filter input at the bottom
+fn draw_filter_input(frame: &mut Frame, app: &App, area: Rect) {
+    let prefix = "/";
+    let input = &app.command_input;
+
+    let line = Line::from(vec![
+        Span::styled(prefix, Style::default().fg(Color::Cyan)),
+        Span::raw(input.as_str()),
+        Span::styled(
+            format!("  ({} matches)", app.links.len()),
+            Style::default().add_modifier(Modifier::DIM),
+        ),
+    ]);
+
+    let paragraph = Paragraph::new(line);
+    frame.render_widget(paragraph, area);
+
+    // Position cursor
+    let cursor_x = area.x + prefix.len() as u16 + app.command_cursor as u16;
+    frame.set_cursor_position((cursor_x, area.y));
 }

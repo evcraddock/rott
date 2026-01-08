@@ -1844,8 +1844,12 @@ dependencies = [
  "crossterm",
  "open",
  "ratatui",
+ "reqwest",
  "rott-core",
+ "scraper",
  "tempfile",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]
