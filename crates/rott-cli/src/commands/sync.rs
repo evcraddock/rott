@@ -32,15 +32,19 @@ pub async fn sync(store: &mut Store, output: &Output) -> Result<()> {
     let sync_state_path = config.data_dir.join("sync_state.json");
     let sync_state = SyncState::with_path(sync_state_path).unwrap_or_else(|_| SyncState::new());
 
+    let root_id = store.root_id();
+
     // Create sync client
-    let client = SyncClient::new(sync_url, *store.root_id()).with_sync_state(sync_state);
+    let client = SyncClient::new(sync_url, root_id).with_sync_state(sync_state);
 
-    output.message(&format!("Syncing document {}...", store.root_id()));
+    output.message(&format!("Syncing document {}...", root_id));
 
-    // Get mutable access to document and sync
-    let doc = store.document_mut();
-    match client.sync_once(doc).await {
+    // Get shared document and sync
+    let shared_doc = store.shared_document();
+    let mut doc = shared_doc.lock().await;
+    match client.sync_once(&mut doc).await {
         Ok(updated) => {
+            drop(doc); // Release lock before rebuilding projection
             if updated {
                 // Rebuild projection after sync
                 store.rebuild_projection()?;
@@ -73,12 +77,16 @@ pub async fn sync_quiet(store: &mut Store, config: &Config) -> Result<()> {
     let sync_state_path = config.data_dir.join("sync_state.json");
     let sync_state = SyncState::with_path(sync_state_path).unwrap_or_else(|_| SyncState::new());
 
-    // Create sync client
-    let client = SyncClient::new(sync_url, *store.root_id()).with_sync_state(sync_state);
+    let root_id = store.root_id();
 
-    // Sync
-    let doc = store.document_mut();
-    let updated = client.sync_once(doc).await?;
+    // Create sync client
+    let client = SyncClient::new(sync_url, root_id).with_sync_state(sync_state);
+
+    // Get shared document and sync
+    let shared_doc = store.shared_document();
+    let mut doc = shared_doc.lock().await;
+    let updated = client.sync_once(&mut doc).await?;
+    drop(doc); // Release lock before rebuilding projection
 
     if updated {
         // Rebuild projection after sync

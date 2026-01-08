@@ -26,6 +26,9 @@
 //! let links = store.get_all_links()?;
 //! ```
 
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
 use anyhow::{Context, Result};
 use uuid::Uuid;
 
@@ -39,8 +42,8 @@ use crate::storage::{AutomergePersistence, SqliteProjection, StorageStats};
 ///
 /// Manages the root Automerge document and keeps SQLite in sync.
 pub struct Store {
-    /// The root Automerge document
-    doc: RottDocument,
+    /// The root Automerge document (shared for sync)
+    doc: Arc<Mutex<RottDocument>>,
     /// Automerge persistence handler
     persistence: AutomergePersistence,
     /// SQLite projection for queries
@@ -95,23 +98,28 @@ impl Store {
             .context("Failed to project document to SQLite")?;
 
         Ok(Self {
-            doc,
+            doc: Arc::new(Mutex::new(doc)),
             persistence,
             projection,
             config,
         })
     }
 
+    /// Get a clone of the shared document handle (for sync)
+    pub fn shared_document(&self) -> Arc<Mutex<RottDocument>> {
+        Arc::clone(&self.doc)
+    }
+
     /// Get the root document ID
     ///
     /// This ID serves as the user's identity for sync purposes.
-    pub fn root_id(&self) -> &DocumentId {
-        self.doc.id()
+    pub fn root_id(&self) -> DocumentId {
+        self.doc.blocking_lock().id().clone()
     }
 
     /// Get the Automerge URL for the root document
     pub fn root_url(&self) -> String {
-        self.doc.url()
+        self.doc.blocking_lock().url()
     }
 
     /// Get the configuration
@@ -129,6 +137,7 @@ impl Store {
     /// Add a new link
     pub fn add_link(&mut self, link: &Link) -> Result<()> {
         self.doc
+            .blocking_lock()
             .add_link(link)
             .context("Failed to add link to document")?;
         self.save_and_project()
@@ -137,6 +146,7 @@ impl Store {
     /// Update an existing link
     pub fn update_link(&mut self, link: &Link) -> Result<()> {
         self.doc
+            .blocking_lock()
             .update_link(link)
             .context("Failed to update link in document")?;
         self.save_and_project()
@@ -145,6 +155,7 @@ impl Store {
     /// Delete a link
     pub fn delete_link(&mut self, id: Uuid) -> Result<()> {
         self.doc
+            .blocking_lock()
             .delete_link(id)
             .context("Failed to delete link from document")?;
         self.save_and_project()
@@ -183,6 +194,7 @@ impl Store {
     /// Add a note to a link
     pub fn add_note_to_link(&mut self, link_id: Uuid, note: &Note) -> Result<()> {
         self.doc
+            .blocking_lock()
             .add_note_to_link(link_id, note)
             .context("Failed to add note to link")?;
         self.save_and_project()
@@ -191,6 +203,7 @@ impl Store {
     /// Remove a note from a link
     pub fn remove_note_from_link(&mut self, link_id: Uuid, note_id: Uuid) -> Result<()> {
         self.doc
+            .blocking_lock()
             .remove_note_from_link(link_id, note_id)
             .context("Failed to remove note from link")?;
         self.save_and_project()
@@ -228,37 +241,27 @@ impl Store {
 
     // ==================== Advanced ====================
 
-    /// Get access to the underlying Automerge document (for sync)
-    pub fn document(&self) -> &RottDocument {
-        &self.doc
-    }
-
-    /// Get mutable access to the underlying Automerge document
-    ///
-    /// After modifying, call `save_and_project()` to persist changes.
-    pub fn document_mut(&mut self) -> &mut RottDocument {
-        &mut self.doc
-    }
-
     /// Save the document and update SQLite projection
     ///
     /// Call this after making direct modifications to the document.
     pub fn save_and_project(&mut self) -> Result<()> {
+        let mut doc = self.doc.blocking_lock();
         self.persistence
-            .save(&mut self.doc)
+            .save(&mut doc)
             .context("Failed to save document")?;
         self.projection
-            .project_full(&self.doc)
+            .project_full(&doc)
             .context("Failed to project to SQLite")?;
         Ok(())
     }
 
     /// Force a full rebuild of the SQLite projection
     ///
-    /// Useful if SQLite gets out of sync or corrupted.
+    /// Useful if SQLite gets out of sync or corrupted, or after sync updates.
     pub fn rebuild_projection(&mut self) -> Result<()> {
+        let doc = self.doc.blocking_lock();
         self.projection
-            .project_full(&self.doc)
+            .project_full(&doc)
             .context("Failed to rebuild projection")
     }
 
@@ -315,7 +318,7 @@ mod tests {
         let original_id;
         {
             let mut store = Store::open_with_config(config.clone()).unwrap();
-            original_id = *store.root_id();
+            original_id = store.root_id();
 
             let link = Link::new("https://example.com");
             store.add_link(&link).unwrap();
@@ -323,7 +326,7 @@ mod tests {
 
         // Reopen - should load existing data
         let store = Store::open_with_config(config).unwrap();
-        assert_eq!(*store.root_id(), original_id);
+        assert_eq!(store.root_id(), original_id);
         assert_eq!(store.link_count().unwrap(), 1);
     }
 
@@ -332,9 +335,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = test_config(&temp_dir);
 
-        let id1 = *Store::open_with_config(config.clone()).unwrap().root_id();
-        let id2 = *Store::open_with_config(config.clone()).unwrap().root_id();
-        let id3 = *Store::open_with_config(config).unwrap().root_id();
+        let id1 = Store::open_with_config(config.clone()).unwrap().root_id();
+        let id2 = Store::open_with_config(config.clone()).unwrap().root_id();
+        let id3 = Store::open_with_config(config).unwrap().root_id();
 
         assert_eq!(id1, id2);
         assert_eq!(id2, id3);

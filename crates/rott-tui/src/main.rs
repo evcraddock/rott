@@ -46,7 +46,7 @@ use rott_core::Store;
 use std::io::stdout;
 
 use app::{App, CommandResult, CommandType, EditorTask, InputMode, SyncIndicator};
-use sync::{SyncCommand, SyncEvent, SyncHandle};
+use rott_core::sync::{PersistentSyncHandle, SyncCommand, SyncTaskEvent};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -67,12 +67,8 @@ async fn main() -> Result<()> {
         app.sync_status = SyncIndicator::Syncing;
         terminal.draw(|frame| ui::draw(frame, &app))?;
 
-        // Initial sync to get latest data
-        app.sync_status = sync::do_sync(&mut store).await;
-        app.refresh(&store)?;
-
-        // Spawn periodic sync poller (checks for remote changes every 5 seconds)
-        Some(sync::spawn_sync_poller(5))
+        // Spawn persistent sync task (maintains WebSocket connection)
+        sync::spawn_persistent_sync(&store, &config)
     } else {
         None
     };
@@ -94,10 +90,10 @@ async fn run_app<B: Backend>(
     terminal: &mut Terminal<B>,
     app: &mut App,
     store: &mut Store,
-    mut sync_handle: Option<SyncHandle>,
+    mut sync_handle: Option<PersistentSyncHandle>,
 ) -> Result<()> {
-    // Track if we need to sync after this iteration
-    let mut pending_sync = false;
+    // Track if we need to push changes after this iteration
+    let mut pending_push = false;
 
     loop {
         // Check for status message timeout
@@ -116,28 +112,21 @@ async fn run_app<B: Backend>(
                     handle.event_rx.recv().await
                 } else {
                     // Never resolves if no sync handle
-                    std::future::pending::<Option<SyncEvent>>().await
+                    std::future::pending::<Option<SyncTaskEvent>>().await
                 }
             } => {
                 if let Some(event) = sync_event {
                     match event {
-                        SyncEvent::Connected => {
-                            if app.sync_status != SyncIndicator::Syncing {
-                                app.sync_status = SyncIndicator::Synced;
-                            }
+                        SyncTaskEvent::StatusChanged(status) => {
+                            app.sync_status = sync::status_to_indicator(status);
                         }
-                        SyncEvent::Disconnected => {
-                            app.sync_status = SyncIndicator::Offline;
-                        }
-                        SyncEvent::RemoteChanges => {
-                            // Poll triggered - sync to check for remote changes
-                            app.sync_status = SyncIndicator::Syncing;
-                            terminal.draw(|frame| ui::draw(frame, app))?;
-
-                            app.sync_status = sync::do_sync(store).await;
+                        SyncTaskEvent::DocumentUpdated => {
+                            // Remote changes received - rebuild projection and refresh UI
+                            store.rebuild_projection()?;
                             app.refresh(store)?;
+                            app.set_status("Synced remote changes".to_string());
                         }
-                        SyncEvent::Error(msg) => {
+                        SyncTaskEvent::Error(msg) => {
                             app.set_status(format!("Sync error: {}", msg));
                             app.sync_status = SyncIndicator::Error;
                         }
@@ -147,19 +136,12 @@ async fn run_app<B: Backend>(
 
             // Poll for terminal events
             _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {
-                // Do pending sync if needed
-                if pending_sync && sync::is_sync_enabled(store.config()) {
-                    pending_sync = false;
-                    let prev_status = app.sync_status;
-                    app.sync_status = SyncIndicator::Syncing;
-                    terminal.draw(|frame| ui::draw(frame, app))?;
-
-                    app.sync_status = sync::do_sync(store).await;
-                    app.refresh(store)?; // Refresh UI after sync!
-
-                    // If sync failed but we were connected, show offline
-                    if app.sync_status == SyncIndicator::Offline && prev_status == SyncIndicator::Synced {
-                        // Keep offline status
+                // Push changes if needed
+                if pending_push {
+                    pending_push = false;
+                    if let Some(ref handle) = sync_handle {
+                        // Signal sync task to push local changes
+                        let _ = handle.command_tx.send(SyncCommand::PushChanges).await;
                     }
                 }
 
@@ -180,16 +162,16 @@ async fn run_app<B: Backend>(
                         // Handle based on input mode
                         match app.input_mode {
                             InputMode::Normal => {
-                                if let Some(needs_sync) = handle_normal_mode(app, store, key.code, key.modifiers).await? {
-                                    if needs_sync {
-                                        pending_sync = true;
+                                if let Some(needs_push) = handle_normal_mode(app, store, key.code, key.modifiers).await? {
+                                    if needs_push {
+                                        pending_push = true;
                                     }
                                 }
                             }
                             InputMode::Command => {
-                                if let Some(needs_sync) = handle_command_mode(terminal, app, store, key.code, key.modifiers).await? {
-                                    if needs_sync {
-                                        pending_sync = true;
+                                if let Some(needs_push) = handle_command_mode(terminal, app, store, key.code, key.modifiers).await? {
+                                    if needs_push {
+                                        pending_push = true;
                                     }
                                 }
                             }
@@ -213,7 +195,7 @@ async fn run_app<B: Backend>(
 }
 
 /// Handle key events in normal mode
-/// Returns Some(true) if a sync is needed, Some(false) if not, None for no action
+/// Returns Some(true) if local changes need to be pushed, Some(false) if not, None for no action
 async fn handle_normal_mode(
     app: &mut App,
     store: &mut Store,
@@ -305,11 +287,11 @@ async fn handle_normal_mode(
         }
         KeyCode::Char('d') => {
             app.delete_current_link(store)?;
-            return Ok(Some(true)); // Needs sync
+            return Ok(Some(true)); // Needs push
         }
         KeyCode::Char('u') => {
             app.undo_delete(store)?;
-            return Ok(Some(true)); // Needs sync
+            return Ok(Some(true)); // Needs push
         }
 
         // Filter mode
@@ -329,7 +311,7 @@ async fn handle_normal_mode(
 
         // Manual sync
         KeyCode::Char('s') if modifiers.contains(KeyModifiers::CONTROL) => {
-            return Ok(Some(true)); // Trigger sync
+            return Ok(Some(true)); // Trigger push
         }
 
         _ => {}
@@ -339,7 +321,7 @@ async fn handle_normal_mode(
 }
 
 /// Handle key events in command mode
-/// Returns Some(true) if a sync is needed
+/// Returns Some(true) if local changes need to be pushed
 async fn handle_command_mode<B: Backend>(
     terminal: &mut Terminal<B>,
     app: &mut App,
@@ -372,7 +354,7 @@ async fn handle_command_mode<B: Backend>(
                     app.add_link(store, &url, metadata)?;
                     app.is_loading = false;
 
-                    return Ok(Some(true)); // Needs sync
+                    return Ok(Some(true)); // Needs push
                 }
                 CommandResult::NeedEditor(task) => {
                     // Exit TUI temporarily for editor
@@ -380,7 +362,7 @@ async fn handle_command_mode<B: Backend>(
                     stdout().execute(LeaveAlternateScreen)?;
                     stdout().execute(cursor::Show)?;
 
-                    let mut needs_sync = false;
+                    let mut needs_push = false;
 
                     match task {
                         EditorTask::Note => {
@@ -403,7 +385,7 @@ async fn handle_command_mode<B: Backend>(
 
                             if !body.is_empty() {
                                 app.add_note_to_current(store, &body)?;
-                                needs_sync = true;
+                                needs_push = true;
                             } else {
                                 app.set_status("Note cancelled (empty)".to_string());
                             }
@@ -433,7 +415,7 @@ async fn handle_command_mode<B: Backend>(
                                     store.update_link(&updated)?;
                                     app.set_status("Link updated".to_string());
                                     app.refresh(store)?;
-                                    needs_sync = true;
+                                    needs_push = true;
                                 } else {
                                     app.set_status("Edit cancelled".to_string());
                                 }
@@ -446,7 +428,7 @@ async fn handle_command_mode<B: Backend>(
                         }
                     }
 
-                    return Ok(Some(needs_sync));
+                    return Ok(Some(needs_push));
                 }
             }
         }
