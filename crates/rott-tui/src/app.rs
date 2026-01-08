@@ -246,13 +246,12 @@ impl App {
                 }
             }
             ActivePane::Items => {
-                // Open link in browser
+                // Open link in browser using detached process
+                // (detached works better when running in TUI with raw mode)
                 if let Some(link) = self.current_link() {
                     let url = link.url.clone();
                     let title = link.title.clone();
-                    // Show opening message
-                    self.status_message = Some(format!("Opening '{}'...", title));
-                    if let Err(e) = open::that(&url) {
+                    if let Err(e) = open::that_detached(&url) {
                         self.status_message = Some(format!("Failed to open: {}", e));
                     } else {
                         self.status_message = Some(format!("Opened '{}'", title));
