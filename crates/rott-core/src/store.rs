@@ -114,12 +114,12 @@ impl Store {
     ///
     /// This ID serves as the user's identity for sync purposes.
     pub fn root_id(&self) -> DocumentId {
-        self.doc.blocking_lock().id().clone()
+        tokio::task::block_in_place(|| self.doc.blocking_lock().id().clone())
     }
 
     /// Get the Automerge URL for the root document
     pub fn root_url(&self) -> String {
-        self.doc.blocking_lock().url()
+        tokio::task::block_in_place(|| self.doc.blocking_lock().url())
     }
 
     /// Get the configuration
@@ -136,28 +136,34 @@ impl Store {
 
     /// Add a new link
     pub fn add_link(&mut self, link: &Link) -> Result<()> {
-        self.doc
-            .blocking_lock()
-            .add_link(link)
-            .context("Failed to add link to document")?;
+        tokio::task::block_in_place(|| {
+            self.doc
+                .blocking_lock()
+                .add_link(link)
+                .context("Failed to add link to document")
+        })?;
         self.save_and_project()
     }
 
     /// Update an existing link
     pub fn update_link(&mut self, link: &Link) -> Result<()> {
-        self.doc
-            .blocking_lock()
-            .update_link(link)
-            .context("Failed to update link in document")?;
+        tokio::task::block_in_place(|| {
+            self.doc
+                .blocking_lock()
+                .update_link(link)
+                .context("Failed to update link in document")
+        })?;
         self.save_and_project()
     }
 
     /// Delete a link
     pub fn delete_link(&mut self, id: Uuid) -> Result<()> {
-        self.doc
-            .blocking_lock()
-            .delete_link(id)
-            .context("Failed to delete link from document")?;
+        tokio::task::block_in_place(|| {
+            self.doc
+                .blocking_lock()
+                .delete_link(id)
+                .context("Failed to delete link from document")
+        })?;
         self.save_and_project()
     }
 
@@ -193,19 +199,23 @@ impl Store {
 
     /// Add a note to a link
     pub fn add_note_to_link(&mut self, link_id: Uuid, note: &Note) -> Result<()> {
-        self.doc
-            .blocking_lock()
-            .add_note_to_link(link_id, note)
-            .context("Failed to add note to link")?;
+        tokio::task::block_in_place(|| {
+            self.doc
+                .blocking_lock()
+                .add_note_to_link(link_id, note)
+                .context("Failed to add note to link")
+        })?;
         self.save_and_project()
     }
 
     /// Remove a note from a link
     pub fn remove_note_from_link(&mut self, link_id: Uuid, note_id: Uuid) -> Result<()> {
-        self.doc
-            .blocking_lock()
-            .remove_note_from_link(link_id, note_id)
-            .context("Failed to remove note from link")?;
+        tokio::task::block_in_place(|| {
+            self.doc
+                .blocking_lock()
+                .remove_note_from_link(link_id, note_id)
+                .context("Failed to remove note from link")
+        })?;
         self.save_and_project()
     }
 
@@ -245,24 +255,27 @@ impl Store {
     ///
     /// Call this after making direct modifications to the document.
     pub fn save_and_project(&mut self) -> Result<()> {
-        let mut doc = self.doc.blocking_lock();
-        self.persistence
-            .save(&mut doc)
-            .context("Failed to save document")?;
-        self.projection
-            .project_full(&doc)
-            .context("Failed to project to SQLite")?;
-        Ok(())
+        tokio::task::block_in_place(|| {
+            let mut doc = self.doc.blocking_lock();
+            self.persistence
+                .save(&mut doc)
+                .context("Failed to save document")?;
+            self.projection
+                .project_full(&doc)
+                .context("Failed to project to SQLite")
+        })
     }
 
     /// Force a full rebuild of the SQLite projection
     ///
     /// Useful if SQLite gets out of sync or corrupted, or after sync updates.
     pub fn rebuild_projection(&mut self) -> Result<()> {
-        let doc = self.doc.blocking_lock();
-        self.projection
-            .project_full(&doc)
-            .context("Failed to rebuild projection")
+        tokio::task::block_in_place(|| {
+            let doc = self.doc.blocking_lock();
+            self.projection
+                .project_full(&doc)
+                .context("Failed to rebuild projection")
+        })
     }
 
     /// Get storage statistics
