@@ -135,7 +135,18 @@ impl Store {
     // ==================== Link Operations ====================
 
     /// Add a new link
+    ///
+    /// Returns an error if a link with the same URL already exists.
     pub fn add_link(&mut self, link: &Link) -> Result<()> {
+        // Check for duplicate URL
+        if let Some(existing) = self.get_link_by_url(&link.url)? {
+            anyhow::bail!(
+                "A link with this URL already exists: '{}' (ID: {})",
+                existing.title,
+                existing.id
+            );
+        }
+
         tokio::task::block_in_place(|| {
             self.doc
                 .blocking_lock()
@@ -172,6 +183,13 @@ impl Store {
         self.projection
             .get_link(&id.to_string())
             .context("Failed to get link")
+    }
+
+    /// Get a link by URL (for duplicate detection)
+    pub fn get_link_by_url(&self, url: &str) -> Result<Option<Link>> {
+        self.projection
+            .get_link_by_url(url)
+            .context("Failed to get link by URL")
     }
 
     /// Get all links
@@ -623,5 +641,42 @@ mod tests {
         // Rebuild should produce same result
         store.rebuild_projection().unwrap();
         assert_eq!(store.link_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_duplicate_url_rejected() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut store = Store::open_with_config(test_config(&temp_dir)).unwrap();
+
+        // Add first link
+        store.add_link(&Link::new("https://example.com")).unwrap();
+        assert_eq!(store.link_count().unwrap(), 1);
+
+        // Try to add duplicate - should fail
+        let result = store.add_link(&Link::new("https://example.com"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("already exists"));
+
+        // Count should still be 1
+        assert_eq!(store.link_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_get_link_by_url() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut store = Store::open_with_config(test_config(&temp_dir)).unwrap();
+
+        let mut link = Link::new("https://rust-lang.org");
+        link.set_title("Rust");
+        store.add_link(&link).unwrap();
+
+        // Should find by URL
+        let found = store.get_link_by_url("https://rust-lang.org").unwrap();
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().title, "Rust");
+
+        // Should not find non-existent URL
+        let not_found = store.get_link_by_url("https://not-exists.com").unwrap();
+        assert!(not_found.is_none());
     }
 }

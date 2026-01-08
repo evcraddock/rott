@@ -142,6 +142,31 @@ impl SqliteProjection {
         }
     }
 
+    /// Get a link by URL (for duplicate detection)
+    pub fn get_link_by_url(&self, url: &str) -> Result<Option<Link>> {
+        let normalized = normalize_url(url);
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, url, description, created_at, updated_at FROM links WHERE url = ? OR url = ?",
+        )?;
+
+        // Check both the normalized URL and the original URL
+        let mut rows = stmt.query(params![normalized, url])?;
+
+        if let Some(row) = rows.next()? {
+            let link_row = LinkRow {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                url: row.get(2)?,
+                description: row.get(3)?,
+                created_at: row.get(4)?,
+                updated_at: row.get(5)?,
+            };
+            Ok(Some(self.hydrate_link(link_row)?))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Get links by tag
     pub fn get_links_by_tag(&self, tag: &str) -> Result<Vec<Link>> {
         let mut stmt = self.conn.prepare(
@@ -431,6 +456,31 @@ fn get_or_create_tag(tx: &Transaction, name: &str) -> Result<i64> {
     // Create new tag
     tx.execute("INSERT INTO tags (name) VALUES (?)", params![name])?;
     Ok(tx.last_insert_rowid())
+}
+
+/// Normalize a URL for duplicate detection
+/// - Removes trailing slashes
+/// - Lowercases the domain
+fn normalize_url(url: &str) -> String {
+    let mut normalized = url.trim().to_string();
+
+    // Remove trailing slash (but not for root path)
+    if normalized.ends_with('/') && normalized.matches('/').count() > 3 {
+        normalized.pop();
+    }
+
+    // Try to lowercase just the domain part
+    if let Some(idx) = normalized.find("://") {
+        let (scheme, rest) = normalized.split_at(idx + 3);
+        if let Some(path_idx) = rest.find('/') {
+            let (domain, path) = rest.split_at(path_idx);
+            normalized = format!("{}{}{}", scheme, domain.to_lowercase(), path);
+        } else {
+            normalized = format!("{}{}", scheme, rest.to_lowercase());
+        }
+    }
+
+    normalized
 }
 
 #[cfg(test)]
