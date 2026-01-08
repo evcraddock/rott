@@ -543,7 +543,7 @@ mod tests {
 
         // Add multiple items
         for i in 0..10 {
-            let link = Link::new(&format!("https://example{}.com", i));
+            let link = Link::new(format!("https://example{}.com", i));
             doc.add_link(&link).unwrap();
         }
         persistence.save(&mut doc).unwrap();

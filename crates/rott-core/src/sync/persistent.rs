@@ -344,6 +344,7 @@ async fn wait_for_peer(
 }
 
 /// Perform a sync exchange
+#[allow(clippy::too_many_arguments)]
 async fn do_sync<S>(
     peer_id: &str,
     server_peer_id: &str,
@@ -456,6 +457,7 @@ where
 }
 
 /// Process an incoming sync message
+#[allow(clippy::too_many_arguments)]
 async fn process_sync_message<S>(
     peer_id: &str,
     server_peer_id: &str,
@@ -509,6 +511,7 @@ where
 }
 
 /// Handle incoming sync message (server-initiated)
+#[allow(clippy::too_many_arguments)]
 async fn handle_incoming_sync<S>(
     peer_id: &str,
     server_peer_id: &str,

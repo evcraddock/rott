@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn test_disk_full_detection() {
-        let io_err = io::Error::new(io::ErrorKind::Other, "No space left on device");
+        let io_err = io::Error::other("No space left on device");
         let err = StorageError::from_io(io_err, PathBuf::from("/full/disk"));
 
         assert!(matches!(err, StorageError::DiskFull { .. }));
