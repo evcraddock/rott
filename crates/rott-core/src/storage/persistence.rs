@@ -8,13 +8,22 @@
 //! Files:
 //! - `document.automerge` - The Automerge binary document
 //! - `root_doc_id` - The document ID (bs58check encoded)
+//!
+//! ## Error Handling
+//!
+//! - Disk full: Detected and reported with recovery suggestion
+//! - Permission denied: Clear error message with path
+//! - Corrupt documents: Backed up automatically, fresh document created
+//! - Missing directories: Created automatically
 
 use std::fs::{self, File};
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use chrono::Utc;
 
+use super::error::{StorageError, StorageResult};
 use crate::config::Config;
 use crate::document::RottDocument;
 use crate::document_id::DocumentId;
@@ -158,6 +167,156 @@ impl AutomergePersistence {
         }
 
         Ok(())
+    }
+
+    /// Load document with automatic recovery from corruption
+    ///
+    /// If the document is corrupted:
+    /// 1. Creates a backup of the corrupted file
+    /// 2. Creates a fresh document
+    /// 3. Returns the fresh document with a warning
+    ///
+    /// Returns `(document, was_recovered)` where `was_recovered` is true
+    /// if the document was corrupted and a fresh one was created.
+    pub fn load_with_recovery(&self) -> Result<(RottDocument, bool)> {
+        let path = self.config.automerge_path();
+
+        if !path.exists() {
+            return Ok((RottDocument::new(), false));
+        }
+
+        // Try to read the file
+        let bytes = match fs::read(&path) {
+            Ok(b) => b,
+            Err(e) => {
+                return Err(StorageError::from_io(e, path.clone()).into());
+            }
+        };
+
+        // Try to parse the document
+        match RottDocument::load(&bytes) {
+            Ok(doc) => Ok((doc, false)),
+            Err(_) => {
+                // Document is corrupted - attempt recovery
+                let backup_path = self.backup_corrupt_file(&path)?;
+
+                // Log the corruption (in production, this would go to a proper logger)
+                eprintln!(
+                    "Warning: Document was corrupted. Backup saved to {:?}. Starting fresh.",
+                    backup_path
+                );
+
+                // Create fresh document
+                let doc = RottDocument::new();
+
+                Ok((doc, true))
+            }
+        }
+    }
+
+    /// Load or create with automatic recovery
+    ///
+    /// Like `load_or_create` but handles corruption gracefully.
+    pub fn load_or_create_with_recovery(&self) -> Result<(RottDocument, bool)> {
+        let (doc, was_recovered) = self.load_with_recovery()?;
+
+        // Save the document (whether new or recovered)
+        if was_recovered || !self.exists() {
+            let mut doc = doc;
+            self.save(&mut doc)?;
+            return Ok((doc, was_recovered));
+        }
+
+        Ok((doc, false))
+    }
+
+    /// Create a backup of a corrupted file
+    fn backup_corrupt_file(&self, path: &Path) -> Result<PathBuf> {
+        let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
+        let backup_name = format!(
+            "{}.corrupt.{}.backup",
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("document"),
+            timestamp
+        );
+        let backup_path = path.with_file_name(backup_name);
+
+        fs::copy(path, &backup_path)
+            .with_context(|| format!("Failed to create backup at {:?}", backup_path))?;
+
+        Ok(backup_path)
+    }
+
+    /// Validate that the data directory is writable
+    ///
+    /// Creates the directory if it doesn't exist and tests write access.
+    pub fn validate_storage(&self) -> StorageResult<()> {
+        let data_dir = &self.config.data_dir;
+
+        // Create directory if needed
+        if !data_dir.exists() {
+            fs::create_dir_all(data_dir).map_err(|e| StorageError::CreateDirectory {
+                path: data_dir.clone(),
+                source: e,
+            })?;
+        }
+
+        // Test write access by creating a temp file
+        let test_path = data_dir.join(".write_test");
+        match File::create(&test_path) {
+            Ok(_) => {
+                // Clean up test file
+                let _ = fs::remove_file(&test_path);
+                Ok(())
+            }
+            Err(e) => Err(StorageError::from_io(e, data_dir.clone())),
+        }
+    }
+
+    /// Get storage statistics
+    pub fn storage_stats(&self) -> StorageStats {
+        let doc_path = self.config.automerge_path();
+        let db_path = self.config.sqlite_path();
+
+        StorageStats {
+            document_size: fs::metadata(&doc_path).map(|m| m.len()).ok(),
+            database_size: fs::metadata(&db_path).map(|m| m.len()).ok(),
+            document_exists: doc_path.exists(),
+            database_exists: db_path.exists(),
+        }
+    }
+}
+
+/// Storage statistics
+#[derive(Debug, Clone)]
+pub struct StorageStats {
+    /// Size of the Automerge document in bytes
+    pub document_size: Option<u64>,
+    /// Size of the SQLite database in bytes
+    pub database_size: Option<u64>,
+    /// Whether the document file exists
+    pub document_exists: bool,
+    /// Whether the database file exists
+    pub database_exists: bool,
+}
+
+impl StorageStats {
+    /// Total storage size in bytes
+    pub fn total_size(&self) -> u64 {
+        self.document_size.unwrap_or(0) + self.database_size.unwrap_or(0)
+    }
+
+    /// Format total size as human-readable string
+    pub fn total_size_human(&self) -> String {
+        let bytes = self.total_size();
+        if bytes < 1024 {
+            format!("{} B", bytes)
+        } else if bytes < 1024 * 1024 {
+            format!("{:.1} KB", bytes as f64 / 1024.0)
+        } else {
+            format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+        }
     }
 }
 
@@ -385,5 +544,143 @@ mod tests {
         // Final verification
         let final_doc = persistence.load().unwrap().unwrap();
         assert_eq!(final_doc.get_all_links().unwrap().len(), 9);
+    }
+
+    #[test]
+    fn test_load_with_recovery_valid_document() {
+        let temp_dir = TempDir::new().unwrap();
+        let persistence = AutomergePersistence::new(test_config(&temp_dir));
+
+        // Create and save a valid document
+        let mut doc = RottDocument::new();
+        let link = Link::new("https://example.com");
+        doc.add_link(&link).unwrap();
+        persistence.save(&mut doc).unwrap();
+
+        // Load with recovery - should succeed without recovery
+        let (loaded, was_recovered) = persistence.load_with_recovery().unwrap();
+        assert!(!was_recovered);
+        assert_eq!(loaded.get_all_links().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_load_with_recovery_corrupt_document() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = test_config(&temp_dir);
+        let persistence = AutomergePersistence::new(config.clone());
+
+        // Write corrupt data to the document path
+        let doc_path = config.automerge_path();
+        fs::create_dir_all(doc_path.parent().unwrap()).unwrap();
+        fs::write(&doc_path, b"this is not valid automerge data").unwrap();
+
+        // Load with recovery - should recover
+        let (doc, was_recovered) = persistence.load_with_recovery().unwrap();
+        assert!(was_recovered);
+        assert!(doc.get_all_links().unwrap().is_empty()); // Fresh document
+
+        // Backup should exist
+        let backups: Vec<_> = fs::read_dir(config.data_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".corrupt."))
+            .collect();
+        assert_eq!(backups.len(), 1);
+    }
+
+    #[test]
+    fn test_load_with_recovery_no_document() {
+        let temp_dir = TempDir::new().unwrap();
+        let persistence = AutomergePersistence::new(test_config(&temp_dir));
+
+        // No document exists - should create new
+        let (doc, was_recovered) = persistence.load_with_recovery().unwrap();
+        assert!(!was_recovered);
+        assert!(doc.get_all_links().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_load_or_create_with_recovery() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = test_config(&temp_dir);
+        let persistence = AutomergePersistence::new(config.clone());
+
+        // Write corrupt data
+        let doc_path = config.automerge_path();
+        fs::create_dir_all(doc_path.parent().unwrap()).unwrap();
+        fs::write(&doc_path, b"corrupt").unwrap();
+
+        // Should recover and save new document
+        let (doc, was_recovered) = persistence.load_or_create_with_recovery().unwrap();
+        assert!(was_recovered);
+
+        // New document should be saved
+        assert!(persistence.exists());
+        let loaded = persistence.load().unwrap().unwrap();
+        assert_eq!(*loaded.id(), *doc.id());
+    }
+
+    #[test]
+    fn test_validate_storage() {
+        let temp_dir = TempDir::new().unwrap();
+        let persistence = AutomergePersistence::new(test_config(&temp_dir));
+
+        // Should succeed - temp dir is writable
+        persistence.validate_storage().unwrap();
+    }
+
+    #[test]
+    fn test_validate_storage_creates_directory() {
+        let temp_dir = TempDir::new().unwrap();
+        let nested_dir = temp_dir.path().join("a").join("b").join("c");
+        let config = Config {
+            data_dir: nested_dir.clone(),
+            sync_url: None,
+            sync_enabled: false,
+        };
+        let persistence = AutomergePersistence::new(config);
+
+        assert!(!nested_dir.exists());
+        persistence.validate_storage().unwrap();
+        assert!(nested_dir.exists());
+    }
+
+    #[test]
+    fn test_storage_stats() {
+        let temp_dir = TempDir::new().unwrap();
+        let persistence = AutomergePersistence::new(test_config(&temp_dir));
+
+        // Initially nothing exists
+        let stats = persistence.storage_stats();
+        assert!(!stats.document_exists);
+        assert!(!stats.database_exists);
+        assert_eq!(stats.total_size(), 0);
+
+        // Create document
+        let mut doc = RottDocument::new();
+        persistence.save(&mut doc).unwrap();
+
+        let stats = persistence.storage_stats();
+        assert!(stats.document_exists);
+        assert!(stats.document_size.unwrap() > 0);
+    }
+
+    #[test]
+    fn test_storage_stats_human_readable() {
+        let stats = StorageStats {
+            document_size: Some(1024),
+            database_size: Some(1024),
+            document_exists: true,
+            database_exists: true,
+        };
+        assert_eq!(stats.total_size_human(), "2.0 KB");
+
+        let stats = StorageStats {
+            document_size: Some(1024 * 1024),
+            database_size: Some(512 * 1024),
+            document_exists: true,
+            database_exists: true,
+        };
+        assert_eq!(stats.total_size_human(), "1.5 MB");
     }
 }

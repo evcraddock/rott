@@ -28,7 +28,7 @@ use crate::config::Config;
 use crate::document::RottDocument;
 use crate::document_id::DocumentId;
 use crate::models::{Link, Note};
-use crate::storage::{AutomergePersistence, SqliteProjection};
+use crate::storage::{AutomergePersistence, SqliteProjection, StorageStats};
 
 /// Unified storage interface for ROTT
 ///
@@ -63,13 +63,26 @@ impl Store {
     /// Open the store with a specific configuration
     pub fn open_with_config(config: Config) -> Result<Self> {
         let persistence = AutomergePersistence::new(config.clone());
+
+        // Validate storage is accessible
+        persistence
+            .validate_storage()
+            .context("Storage validation failed")?;
+
         let mut projection =
             SqliteProjection::open(&config).context("Failed to open SQLite database")?;
 
-        // Load or create the root document
-        let doc = persistence
-            .load_or_create()
+        // Load or create the root document (with recovery for corruption)
+        let (doc, was_recovered) = persistence
+            .load_or_create_with_recovery()
             .context("Failed to load or create root document")?;
+
+        if was_recovered {
+            eprintln!(
+                "Warning: Document was corrupted and has been recovered. \
+                 A backup of the old document has been saved."
+            );
+        }
 
         // Rebuild SQLite projection to ensure consistency
         projection
@@ -279,6 +292,18 @@ impl Store {
         self.projection
             .project_full(&self.doc)
             .context("Failed to rebuild projection")
+    }
+
+    /// Get storage statistics
+    pub fn storage_stats(&self) -> StorageStats {
+        self.persistence.storage_stats()
+    }
+
+    /// Validate that storage is accessible and writable
+    pub fn validate_storage(&self) -> Result<()> {
+        self.persistence
+            .validate_storage()
+            .context("Storage validation failed")
     }
 }
 
