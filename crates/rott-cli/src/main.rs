@@ -53,6 +53,8 @@ enum Commands {
     },
     /// Show status (root doc ID, sync status)
     Status,
+    /// Sync with remote server
+    Sync,
 }
 
 #[derive(Subcommand)]
@@ -153,7 +155,8 @@ enum ConfigCommands {
     },
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let cli = Cli::parse();
     let output = Output::new(OutputFormat::from_flags(cli.json, cli.quiet));
 
@@ -180,6 +183,7 @@ fn main() -> Result<()> {
         Commands::Tags => commands::tag::list(&store, &output),
         Commands::Config { .. } => unreachable!(), // Handled above
         Commands::Status => commands::status::show(&store, &output),
+        Commands::Sync => commands::sync::sync(&mut store, &output).await,
     }
 }
 

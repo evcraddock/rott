@@ -1,24 +1,63 @@
-[package]
-name = "rott"
+[workspace]
+resolver = "2"
+members = [
+    "crates/rott-core",
+    "crates/rott-cli",
+    "crates/rott-tui",
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+repository = "https://github.com/evcraddock/rott"
 
-[dependencies]
-crossterm = "0.28.1"
-chrono = { version = "0.4.39", features = ["serde"] }
+[workspace.dependencies]
+# Automerge
+automerge = "0.5"
+
+# Database
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# CLI
 clap = { version = "4.5", features = ["derive"] }
-config = "0.15.6"
-gray_matter = "0.2.8"
-ratatui = "0.29.0"
+
+# TUI
+ratatui = "0.29"
+crossterm = "0.28"
+
+# HTTP (for metadata fetching)
 reqwest = { version = "0.12", features = ["blocking"] }
 scraper = "0.20"
-serde = { version = "1.0.217", features = ["derive"] }
-serde_json = "1.0.128"
-serde_yaml = "0.9.34"
-open = "5.3.2"
-dirs = "6.0.0"
-notify = "6.1"
-crossbeam-channel = "0.5"
 
-[dev-dependencies]
-tempfile = "3.14.0"
+# Async
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+futures-util = "0.3"
+
+# Encoding
+base64 = "0.22"
+ciborium = "0.2"
+serde_bytes = "0.11"
+
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Utilities
+thiserror = "1.0"
+anyhow = "1.0"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+bs58 = { version = "0.5", features = ["check"] }
+dirs = "5.0"
+open = "5.3"
+
+# Testing
+tempfile = "3.14"
+
+# Internal crates
+rott-core = { path = "crates/rott-core" }

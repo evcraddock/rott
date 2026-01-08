@@ -18,6 +18,7 @@ serde_json.workspace = true
 anyhow.workspace = true
 reqwest.workspace = true
 scraper.workspace = true
+tokio.workspace = true
 atty = "0.2"
 uuid = { workspace = true }
 

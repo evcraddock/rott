@@ -39,6 +39,7 @@ pub mod document_id;
 pub mod models;
 pub mod storage;
 pub mod store;
+pub mod sync;
 
 pub use config::Config;
 pub use document::{DocumentError, RottDocument};

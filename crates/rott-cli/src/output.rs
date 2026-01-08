@@ -197,6 +197,17 @@ impl Output {
     pub fn should_prompt(&self) -> bool {
         self.format == OutputFormat::Human
     }
+
+    /// Print an informational message
+    pub fn message(&self, msg: &str) {
+        match self.format {
+            OutputFormat::Human => println!("{}", msg),
+            OutputFormat::Json => {
+                println!("{}", serde_json::json!({"message": msg}));
+            }
+            OutputFormat::Quiet => {}
+        }
+    }
 }
 
 /// Truncate a string to max length, adding "..." if truncated
