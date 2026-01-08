@@ -346,6 +346,15 @@ async fn handle_command_mode<B: Backend>(
             match result {
                 CommandResult::Done => {}
                 CommandResult::NeedMetadata(url) => {
+                    // Check for duplicate URL first (before slow metadata fetch)
+                    if let Ok(Some(existing)) = store.get_link_by_url(&url) {
+                        app.set_status(format!(
+                            "Link already exists: '{}'",
+                            existing.title
+                        ));
+                        return Ok(Some(false));
+                    }
+
                     // Fetch metadata asynchronously
                     app.is_loading = true;
                     terminal.draw(|frame| ui::draw(frame, app))?;
