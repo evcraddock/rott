@@ -288,6 +288,8 @@ fn handle_command_mode<B: Backend>(
                             // Re-enter TUI
                             enable_raw_mode()?;
                             stdout().execute(EnterAlternateScreen)?;
+                            // Force terminal to redraw completely
+                            terminal.clear()?;
 
                             if !body.is_empty() {
                                 app.add_note_to_current(store, &body)?;
@@ -315,6 +317,7 @@ fn handle_command_mode<B: Backend>(
                                 // Re-enter TUI
                                 enable_raw_mode()?;
                                 stdout().execute(EnterAlternateScreen)?;
+                                terminal.clear()?;
 
                                 // Parse edited content
                                 if let Some(updated) = parse_link_edit(&content, link) {
@@ -328,6 +331,7 @@ fn handle_command_mode<B: Backend>(
                                 // Re-enter TUI
                                 enable_raw_mode()?;
                                 stdout().execute(EnterAlternateScreen)?;
+                                terminal.clear()?;
                                 app.set_status("No link selected".to_string());
                             }
                         }
