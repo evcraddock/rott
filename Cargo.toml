@@ -3,7 +3,6 @@ resolver = "2"
 members = [
     "crates/rott-core",
     "crates/rott-cli",
-    "crates/rott-tui",
 ]
 
 [workspace.package]

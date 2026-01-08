@@ -29,8 +29,6 @@
 //! - :: Command mode
 
 mod app;
-mod editor;
-mod metadata;
 mod sync;
 mod ui;
 
@@ -48,8 +46,11 @@ use std::io::stdout;
 use app::{App, CommandResult, CommandType, EditorTask, InputMode, SyncIndicator};
 use rott_core::sync::{PersistentSyncHandle, SyncCommand, SyncTaskEvent};
 
-#[tokio::main]
-async fn main() -> Result<()> {
+use crate::editor;
+use crate::metadata;
+
+/// Run the TUI application
+pub async fn run() -> Result<()> {
     // Open the store
     let mut store = Store::open()?;
     let config = store.config().clone();
@@ -73,7 +74,7 @@ async fn main() -> Result<()> {
         None
     };
 
-    // Apply initial filter (Recent)
+    // Apply initial filter (Favorites)
     app.apply_filter(&store)?;
 
     // Run app
@@ -348,10 +349,7 @@ async fn handle_command_mode<B: Backend>(
                 CommandResult::NeedMetadata(url) => {
                     // Check for duplicate URL first (before slow metadata fetch)
                     if let Ok(Some(existing)) = store.get_link_by_url(&url) {
-                        app.set_status(format!(
-                            "Link already exists: '{}'",
-                            existing.title
-                        ));
+                        app.set_status(format!("Link already exists: '{}'", existing.title));
                         return Ok(Some(false));
                     }
 
@@ -360,7 +358,7 @@ async fn handle_command_mode<B: Backend>(
                     terminal.draw(|frame| ui::draw(frame, app))?;
 
                     let metadata = metadata::fetch_metadata(&url).await;
-                    match app.add_link(store, &url, metadata) {
+                    match app.add_link(store, &url, Some(metadata)) {
                         Ok(_) => {
                             app.is_loading = false;
                             return Ok(Some(true)); // Needs push

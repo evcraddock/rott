@@ -11,6 +11,7 @@ mod commands;
 mod editor;
 mod metadata;
 mod output;
+mod tui;
 
 use output::{Output, OutputFormat};
 
@@ -34,6 +35,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Start the TUI interface
+    Tui,
     /// Manage links
     Link {
         #[command(subcommand)]
@@ -151,11 +154,9 @@ async fn main() -> Result<()> {
         Some(Commands::Config { command }) => {
             return handle_config_command(command.clone(), &output);
         }
-        None => {
-            println!("ROTT - Local-first links and notes management");
-            println!();
-            println!("Run 'rott --help' for usage information");
-            return Ok(());
+        Some(Commands::Tui) | None => {
+            // Launch TUI (default when no command given)
+            return tui::run().await;
         }
         _ => {}
     }
@@ -191,6 +192,7 @@ async fn main() -> Result<()> {
     }
 
     let result = match cli.command.unwrap() {
+        Commands::Tui => unreachable!(), // Handled above
         Commands::Link { command } => handle_link_command(command, &mut store, &output).await,
         Commands::Tags => commands::tag::list(&store, &output),
         Commands::Config { .. } => unreachable!(), // Handled above

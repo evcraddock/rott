@@ -22,5 +22,15 @@ tokio.workspace = true
 atty = "0.2"
 uuid = { workspace = true }
 
+# TUI dependencies
+ratatui.workspace = true
+crossterm.workspace = true
+chrono.workspace = true
+open.workspace = true
+futures-util.workspace = true
+tokio-tungstenite.workspace = true
+ciborium.workspace = true
+serde_bytes.workspace = true
+
 [dev-dependencies]
 tempfile.workspace = true

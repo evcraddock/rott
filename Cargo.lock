@@ -1800,14 +1800,22 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "atty",
+ "chrono",
+ "ciborium",
  "clap",
+ "crossterm",
+ "futures-util",
+ "open",
+ "ratatui",
  "reqwest",
  "rott-core",
  "scraper",
  "serde",
+ "serde_bytes",
  "serde_json",
  "tempfile",
  "tokio",
+ "tokio-tungstenite",
  "uuid",
 ]
 
@@ -1832,28 +1840,6 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "toml",
- "uuid",
-]
-
-[[package]]
-name = "rott-tui"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "ciborium",
- "crossterm",
- "futures-util",
- "open",
- "ratatui",
- "reqwest",
- "rott-core",
- "scraper",
- "serde",
- "serde_bytes",
- "tempfile",
- "tokio",
- "tokio-tungstenite",
  "uuid",
 ]
 

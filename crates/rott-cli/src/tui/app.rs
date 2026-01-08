@@ -3,6 +3,9 @@
 use rott_core::{Link, Note, Store};
 use std::process::{Command, Stdio};
 
+// Re-export UrlMetadata from crate's metadata module
+pub use crate::metadata::UrlMetadata;
+
 /// Input mode for the application
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputMode {
@@ -614,14 +617,6 @@ impl App {
 
         Ok(CommandResult::Done)
     }
-}
-
-/// Metadata from URL fetching
-#[derive(Debug, Clone, Default)]
-pub struct UrlMetadata {
-    pub title: Option<String>,
-    pub description: Option<String>,
-    pub author: Vec<String>,
 }
 
 /// Result of command execution

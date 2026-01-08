@@ -8,7 +8,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{ActivePane, App, Filter, InputMode, SyncIndicator};
+use super::app::{ActivePane, App, Filter, InputMode, SyncIndicator};
 
 /// Main UI rendering function
 pub fn draw(frame: &mut Frame, app: &App) {

@@ -10,7 +10,7 @@ use rott_core::sync::{
 };
 use rott_core::{Config, Store};
 
-use crate::app::SyncIndicator;
+use super::app::SyncIndicator;
 
 /// Spawn the persistent sync task
 ///
