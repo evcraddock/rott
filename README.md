@@ -89,6 +89,45 @@ The interface has three panes:
 | `Ctrl+s` | Force sync |
 | `q` | Quit |
 
+### First-Time Setup
+
+On first run, ROTT will prompt you to set up your identity:
+
+```bash
+$ rott init
+
+Welcome to ROTT!
+
+No existing identity found. Is this your first device?
+
+  [1] Yes, create new identity
+  [2] No, I have an existing root document ID
+
+>
+```
+
+Your root document ID is your identity for syncing across devices. You can view it anytime:
+
+```bash
+$ rott device show
+
+Root document ID: 3PkFS4K4KKTeCm2iiN9XVxHRRFdN
+Automerge URL:    automerge:3PkFS4K4KKTeCm2iiN9XVxHRRFdN
+
+Use this ID to set up ROTT on another device:
+  rott init --join 3PkFS4K4KKTeCm2iiN9XVxHRRFdN
+```
+
+**Non-interactive setup (for scripting):**
+
+```bash
+# Create new identity
+rott init --new
+
+# Join existing identity
+rott init --join <root-document-id>
+```
+
 ### CLI Commands
 
 ```bash

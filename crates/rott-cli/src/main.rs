@@ -39,8 +39,11 @@ enum Commands {
     Tui,
     /// Initialize ROTT (first-time setup)
     Init {
+        /// Create a new identity (skip interactive prompt)
+        #[arg(long, conflicts_with = "join")]
+        new: bool,
         /// Join an existing identity by providing root document ID
-        #[arg(long)]
+        #[arg(long, conflicts_with = "new")]
         join: Option<String>,
     },
     /// Device identity management
@@ -171,8 +174,8 @@ async fn main() -> Result<()> {
         Some(Commands::Config { command }) => {
             return handle_config_command(command.clone(), &output);
         }
-        Some(Commands::Init { join }) => {
-            return handle_init_command(join.clone(), &output);
+        Some(Commands::Init { new, join }) => {
+            return handle_init_command(*new, join.clone(), &output);
         }
         _ => {}
     }
@@ -285,7 +288,7 @@ fn handle_config_command(command: Option<ConfigCommands>, output: &Output) -> Re
     }
 }
 
-fn handle_init_command(join: Option<String>, output: &Output) -> Result<()> {
+fn handle_init_command(new: bool, join: Option<String>, output: &Output) -> Result<()> {
     let identity = Identity::new()?;
 
     if identity.is_initialized() {
@@ -299,58 +302,58 @@ fn handle_init_command(join: Option<String>, output: &Output) -> Result<()> {
         return Ok(());
     }
 
-    match join {
-        Some(id_str) => {
-            // Join existing identity
-            let root_id = DocumentId::from_bs58check(&id_str)
-                .map_err(|e| anyhow::anyhow!("Invalid root document ID: {}", e))?;
+    if let Some(id_str) = join {
+        // --join <id>: Join existing identity (no prompt)
+        let root_id = DocumentId::from_bs58check(&id_str)
+            .map_err(|e| anyhow::anyhow!("Invalid root document ID: {}", e))?;
 
-            let result = identity.initialize_join(root_id)?;
+        let result = identity.initialize_join(root_id)?;
 
-            if output.is_json() {
-                println!(
-                    "{}",
-                    serde_json::json!({
-                        "root_id": result.root_id.to_bs58check(),
-                        "is_new": false
-                    })
-                );
-            } else if !output.is_quiet() {
-                println!();
-                println!("Identity configured.");
-                println!();
-                let config = Config::load()?;
-                if config.sync_url.is_none() {
-                    println!("Sync server not configured. Your data will sync once you set one:");
-                    println!("  rott config set sync_url ws://your-server:3030");
-                }
+        if output.is_json() {
+            println!(
+                "{}",
+                serde_json::json!({
+                    "root_id": result.root_id.to_bs58check(),
+                    "is_new": false
+                })
+            );
+        } else if !output.is_quiet() {
+            println!();
+            println!("Identity configured.");
+            println!();
+            let config = Config::load()?;
+            if config.sync_url.is_none() {
+                println!("Sync server not configured. Your data will sync once you set one:");
+                println!("  rott config set sync_url ws://your-server:3030");
             }
         }
-        None => {
-            // Create new identity
-            let result = identity.initialize_new()?;
+    } else if new {
+        // --new: Create new identity (no prompt)
+        let result = identity.initialize_new()?;
 
-            if output.is_json() {
-                println!(
-                    "{}",
-                    serde_json::json!({
-                        "root_id": result.root_id.to_bs58check(),
-                        "is_new": true
-                    })
-                );
-            } else if !output.is_quiet() {
-                println!();
-                println!("Created new identity.");
-                println!();
-                println!("Your root document ID: {}", result.root_id);
-                println!();
-                println!("This ID is stored in: {}", identity.data_dir().display());
-                println!("View it anytime with: rott device show");
-            } else {
-                // Quiet mode - just print the ID
-                println!("{}", result.root_id);
-            }
+        if output.is_json() {
+            println!(
+                "{}",
+                serde_json::json!({
+                    "root_id": result.root_id.to_bs58check(),
+                    "is_new": true
+                })
+            );
+        } else if !output.is_quiet() {
+            println!();
+            println!("Created new identity.");
+            println!();
+            println!("Your root document ID: {}", result.root_id);
+            println!();
+            println!("This ID is stored in: {}", identity.data_dir().display());
+            println!("View it anytime with: rott device show");
+        } else {
+            // Quiet mode - just print the ID
+            println!("{}", result.root_id);
         }
+    } else {
+        // No flags: Interactive prompt
+        run_first_time_setup(output)?;
     }
 
     Ok(())
