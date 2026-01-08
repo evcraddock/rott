@@ -44,9 +44,7 @@ impl SyncState {
 
     /// Get or create sync state for a peer
     pub fn get_or_create(&mut self, peer_id: &str) -> &mut AutomergeSyncState {
-        self.peers
-            .entry(peer_id.to_string())
-            .or_default()
+        self.peers.entry(peer_id.to_string()).or_default()
     }
 
     /// Get sync state for a peer (if exists)

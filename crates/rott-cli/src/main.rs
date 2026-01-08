@@ -5,7 +5,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
-use rott_core::Store;
+use rott_core::{Config, Store};
 
 mod commands;
 mod editor;
@@ -177,17 +177,72 @@ async fn main() -> Result<()> {
     // Open store for commands that need it
     let mut store = Store::open()?;
 
-    match cli.command.unwrap() {
+    // Determine if this is a read or write command
+    let is_write = matches!(
+        &cli.command,
+        Some(Commands::Link {
+            command: LinkCommands::Create { .. }
+        }) | Some(Commands::Link {
+            command: LinkCommands::Edit { .. }
+        }) | Some(Commands::Link {
+            command: LinkCommands::Delete { .. }
+        }) | Some(Commands::Note {
+            command: NoteCommands::Create { .. }
+        }) | Some(Commands::Note {
+            command: NoteCommands::Edit { .. }
+        }) | Some(Commands::Note {
+            command: NoteCommands::Delete { .. }
+        })
+    );
+
+    let is_manual_sync = matches!(&cli.command, Some(Commands::Sync));
+
+    // Sync before read commands (to get latest data)
+    if !is_write && !is_manual_sync {
+        auto_sync(&mut store, &output).await;
+    }
+
+    let result = match cli.command.unwrap() {
         Commands::Link { command } => handle_link_command(command, &mut store, &output).await,
         Commands::Note { command } => handle_note_command(command, &mut store, &output),
         Commands::Tags => commands::tag::list(&store, &output),
         Commands::Config { .. } => unreachable!(), // Handled above
         Commands::Status => commands::status::show(&store, &output),
         Commands::Sync => commands::sync::sync(&mut store, &output).await,
+    };
+
+    // Sync after write commands (to push changes)
+    if is_write {
+        auto_sync(&mut store, &output).await;
+    }
+
+    result
+}
+
+/// Auto-sync if sync is enabled, silently handles errors
+async fn auto_sync(store: &mut Store, output: &Output) {
+    let config = match Config::load() {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+
+    if !config.sync_enabled || config.sync_url.is_none() {
+        return;
+    }
+
+    // Sync silently (errors shown only in non-quiet mode)
+    if let Err(e) = commands::sync::sync_quiet(store, &config).await {
+        if !output.is_quiet() {
+            eprintln!("⚠ Auto-sync failed: {}", e);
+        }
     }
 }
 
-async fn handle_link_command(command: LinkCommands, store: &mut Store, output: &Output) -> Result<()> {
+async fn handle_link_command(
+    command: LinkCommands,
+    store: &mut Store,
+    output: &Output,
+) -> Result<()> {
     match command {
         LinkCommands::Create { url, tag } => commands::link::create(store, url, tag, output).await,
         LinkCommands::List { tag } => commands::link::list(store, tag, output),

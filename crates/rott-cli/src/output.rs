@@ -42,6 +42,11 @@ impl Output {
         Self { format }
     }
 
+    /// Check if output is in quiet mode
+    pub fn is_quiet(&self) -> bool {
+        matches!(self.format, OutputFormat::Quiet)
+    }
+
     /// Print a single link
     pub fn print_link(&self, link: &Link) {
         match self.format {

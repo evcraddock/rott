@@ -3,7 +3,7 @@
 use anyhow::{bail, Result};
 
 use rott_core::sync::{SyncClient, SyncState};
-use rott_core::Store;
+use rott_core::{Config, Store};
 
 use crate::output::Output;
 
@@ -58,6 +58,31 @@ pub async fn sync(store: &mut Store, output: &Output) -> Result<()> {
             output.message(&format!("Sync failed: {}", e));
             return Err(e);
         }
+    }
+
+    Ok(())
+}
+
+/// Sync quietly (for auto-sync) - no output on success
+pub async fn sync_quiet(store: &mut Store, config: &Config) -> Result<()> {
+    let Some(ref sync_url) = config.sync_url else {
+        return Ok(());
+    };
+
+    // Create sync state with persistence
+    let sync_state_path = config.data_dir.join("sync_state.json");
+    let sync_state = SyncState::with_path(sync_state_path).unwrap_or_else(|_| SyncState::new());
+
+    // Create sync client
+    let client = SyncClient::new(sync_url, *store.root_id()).with_sync_state(sync_state);
+
+    // Sync
+    let doc = store.document_mut();
+    let updated = client.sync_once(doc).await?;
+
+    if updated {
+        // Rebuild projection after sync
+        store.rebuild_projection()?;
     }
 
     Ok(())
