@@ -345,8 +345,12 @@ impl App {
             None => store.get_all_links()?,
         };
 
-        // Reset link selection
-        self.link_index = 0;
+        // Clamp link selection to new list bounds (preserve position when possible)
+        if self.links.is_empty() {
+            self.link_index = 0;
+        } else {
+            self.link_index = self.link_index.min(self.links.len() - 1);
+        }
 
         Ok(())
     }
