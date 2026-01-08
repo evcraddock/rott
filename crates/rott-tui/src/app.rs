@@ -288,6 +288,8 @@ impl App {
                     self.toggle_tags_accordion();
                 } else {
                     self.apply_filter(store)?;
+                    // Auto-switch to Items pane after selecting a filter
+                    self.active_pane = ActivePane::Items;
                 }
             }
             ActivePane::Items => {
