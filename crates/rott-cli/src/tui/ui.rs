@@ -390,7 +390,7 @@ fn draw_help_overlay(frame: &mut Frame) {
 
     // Calculate centered popup area
     let popup_width = 50.min(area.width.saturating_sub(4));
-    let popup_height = 18.min(area.height.saturating_sub(4));
+    let popup_height = 20.min(area.height.saturating_sub(4));
     let popup_x = (area.width.saturating_sub(popup_width)) / 2;
     let popup_y = (area.height.saturating_sub(popup_height)) / 2;
     let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
@@ -406,6 +406,8 @@ fn draw_help_overlay(frame: &mut Frame) {
         Line::from(""),
         Line::from("Navigation:"),
         Line::from("  j/k, ↑/↓    Move up/down"),
+        Line::from("  gg          Jump to first item"),
+        Line::from("  G           Jump to last item"),
         Line::from("  h/l, ←/→    Switch panes"),
         Line::from("  Tab         Cycle panes"),
         Line::from("  Enter       Open link / Apply filter"),

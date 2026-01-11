@@ -116,6 +116,8 @@ pub struct App {
     pub show_help: bool,
     /// Sync status indicator
     pub sync_status: SyncIndicator,
+    /// Pending 'g' keypress for gg sequence (with timestamp)
+    pub pending_g: Option<std::time::Instant>,
 }
 
 /// Sync status indicator
@@ -172,6 +174,7 @@ impl App {
             } else {
                 SyncIndicator::Disabled
             },
+            pending_g: None,
         })
     }
 
@@ -268,6 +271,40 @@ impl App {
             ActivePane::Detail => {
                 // Scroll detail view down
                 self.detail_scroll = self.detail_scroll.saturating_add(1);
+            }
+        }
+    }
+
+    /// Move selection to first item in the current pane (vim 'gg')
+    pub fn move_to_first(&mut self) {
+        match self.active_pane {
+            ActivePane::Filters => {
+                self.filter_index = 0;
+            }
+            ActivePane::Items => {
+                self.link_index = 0;
+                self.detail_scroll = 0;
+            }
+            ActivePane::Detail => {
+                self.detail_scroll = 0;
+            }
+        }
+    }
+
+    /// Move selection to last item in the current pane (vim 'G')
+    pub fn move_to_last(&mut self) {
+        match self.active_pane {
+            ActivePane::Filters => {
+                self.filter_index = self.filters.len().saturating_sub(1);
+            }
+            ActivePane::Items => {
+                self.link_index = self.links.len().saturating_sub(1);
+                self.detail_scroll = 0;
+            }
+            ActivePane::Detail => {
+                // For detail pane, we can't easily know max scroll, so just add a large value
+                // The UI will clamp it appropriately
+                self.detail_scroll = u16::MAX;
             }
         }
     }

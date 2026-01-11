@@ -214,10 +214,19 @@ async fn handle_normal_mode(
         | KeyCode::Left
         | KeyCode::Right
         | KeyCode::Tab
-        | KeyCode::BackTab => {
+        | KeyCode::BackTab
+        | KeyCode::Char('g')
+        | KeyCode::Char('G') => {
             app.status_message = None;
         }
         _ => {}
+    }
+
+    // Clear pending 'g' if timeout expired (500ms)
+    if let Some(time) = app.pending_g {
+        if time.elapsed() > std::time::Duration::from_millis(500) {
+            app.pending_g = None;
+        }
     }
 
     match code {
@@ -315,7 +324,28 @@ async fn handle_normal_mode(
             return Ok(Some(true)); // Trigger push
         }
 
-        _ => {}
+        // Vim navigation: G (go to last)
+        KeyCode::Char('G') => {
+            app.pending_g = None; // Clear any pending g
+            app.move_to_last();
+        }
+
+        // Vim navigation: g (start of gg sequence)
+        KeyCode::Char('g') => {
+            if app.pending_g.is_some() {
+                // Second 'g' - complete the gg sequence
+                app.pending_g = None;
+                app.move_to_first();
+            } else {
+                // First 'g' - start the sequence
+                app.pending_g = Some(std::time::Instant::now());
+            }
+        }
+
+        _ => {
+            // Any other key clears pending 'g'
+            app.pending_g = None;
+        }
     }
 
     Ok(Some(false))
