@@ -93,9 +93,11 @@ impl SqliteProjection {
     // ==================== Query Methods ====================
 
     /// Get all links (without notes - use get_link for full details)
+    ///
+    /// Returns links sorted by creation date ascending (oldest first).
     pub fn get_all_links(&self) -> Result<Vec<Link>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, url, description, created_at, updated_at FROM links ORDER BY created_at DESC",
+            "SELECT id, title, url, description, created_at, updated_at FROM links ORDER BY created_at ASC",
         )?;
 
         let link_rows = stmt.query_map([], |row| {
@@ -168,6 +170,8 @@ impl SqliteProjection {
     }
 
     /// Get links by tag
+    ///
+    /// Returns links sorted by creation date ascending (oldest first).
     pub fn get_links_by_tag(&self, tag: &str) -> Result<Vec<Link>> {
         let mut stmt = self.conn.prepare(
             r#"
@@ -176,7 +180,7 @@ impl SqliteProjection {
             JOIN link_tags lt ON l.id = lt.link_id
             JOIN tags t ON lt.tag_id = t.id
             WHERE t.name = ?
-            ORDER BY l.created_at DESC
+            ORDER BY l.created_at ASC
             "#,
         )?;
 
