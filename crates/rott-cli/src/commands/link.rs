@@ -40,7 +40,9 @@ pub async fn create(
     store.add_link(&link).context("Failed to create link")?;
 
     output.success(&format!("Created link: {}", link.id));
-    output.print_link(&link);
+    if !output.is_quiet() {
+        output.print_link(&link);
+    }
 
     Ok(())
 }
