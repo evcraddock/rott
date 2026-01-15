@@ -211,7 +211,7 @@ async fn main() -> Result<()> {
 
     // Handle TUI (default when no command given)
     if matches!(&cli.command, Some(Commands::Tui) | None) {
-        return tui::run().await;
+        return tui::run(cli.config.as_ref()).await;
     }
 
     // Handle device command (doesn't need full store)

@@ -56,9 +56,9 @@ use crate::editor;
 use crate::metadata;
 
 /// Run the TUI application
-pub async fn run() -> Result<()> {
-    // Load config first
-    let config = Config::load()?;
+pub async fn run(config_path: Option<&std::path::PathBuf>) -> Result<()> {
+    // Load config first (respecting CLI override)
+    let config = Config::load_with_cli_override(config_path)?;
 
     // Check if we need to run the setup wizard
     let identity = Identity::with_config(config.clone());
