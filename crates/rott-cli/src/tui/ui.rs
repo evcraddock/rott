@@ -47,6 +47,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
     if app.show_help {
         draw_help_overlay(frame);
     }
+
+    // Draw error modal if there's an error (on top of everything)
+    if let Some(ref error) = app.error_message {
+        draw_error_modal(frame, error);
+    }
 }
 
 /// Draw the filters pane (left)
@@ -436,5 +441,42 @@ fn draw_help_overlay(frame: &mut Frame) {
         .border_style(Style::default().add_modifier(Modifier::BOLD));
 
     let paragraph = Paragraph::new(help_text).block(block);
+    frame.render_widget(paragraph, popup_area);
+}
+
+/// Draw error modal
+fn draw_error_modal(frame: &mut Frame, error: &str) {
+    let area = frame.area();
+
+    // Calculate centered popup area (smaller than help)
+    let popup_width = 60.min(area.width.saturating_sub(4));
+    let popup_height = 10.min(area.height.saturating_sub(4));
+    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
+    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+    // Clear the popup area
+    frame.render_widget(ratatui::widgets::Clear, popup_area);
+
+    // Build error text with word wrapping
+    let mut lines = vec![
+        Line::from(""),
+        Line::from(vec![Span::styled(error, Style::default().fg(Color::White))]),
+    ];
+
+    // Add spacing and dismiss instruction
+    lines.push(Line::from(""));
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![Span::styled(
+        "Press any key to dismiss",
+        Style::default().fg(Color::Gray).add_modifier(Modifier::DIM),
+    )]));
+
+    let block = Block::default()
+        .title(" Error ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD));
+
+    let paragraph = Paragraph::new(lines).block(block).wrap(Wrap { trim: true });
     frame.render_widget(paragraph, popup_area);
 }

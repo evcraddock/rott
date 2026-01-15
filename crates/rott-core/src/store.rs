@@ -30,6 +30,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use anyhow::{Context, Result};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::config::Config;
@@ -74,6 +75,7 @@ impl Store {
     /// Returns an error if in "pending sync" state (joined but not yet synced).
     /// Use `Store::is_pending_sync()` to check this state before opening.
     pub fn open_with_config(config: Config) -> Result<Self> {
+        info!("Opening store from {:?}", config.data_dir);
         let persistence = AutomergePersistence::new(config.clone());
 
         // Validate storage is accessible
@@ -104,6 +106,7 @@ impl Store {
             .context("Failed to load or create root document")?;
 
         if was_recovered {
+            warn!("Document was corrupted and recovered from backup");
             eprintln!(
                 "Warning: Document was corrupted and has been recovered. \
                  A backup of the old document has been saved."
@@ -114,6 +117,8 @@ impl Store {
         projection
             .project_full(&doc)
             .context("Failed to project document to SQLite")?;
+
+        debug!("Store opened successfully, root_id={}", doc.id());
 
         Ok(Self {
             doc: Arc::new(Mutex::new(doc)),
@@ -457,6 +462,7 @@ mod tests {
             sync_url: None,
             sync_enabled: false,
             favorite_tag: None,
+            log_file: None,
         }
     }
 

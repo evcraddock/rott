@@ -5,6 +5,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
+use tracing_subscriber::EnvFilter;
 
 use rott_core::{Config, DocumentId, Identity, Store};
 
@@ -33,6 +34,10 @@ struct Cli {
     /// Quiet mode - minimal output
     #[arg(short, long, global = true)]
     quiet: bool,
+
+    /// Verbose output (-v info, -vv debug, -vvv trace)
+    #[arg(short, long, global = true, action = clap::ArgAction::Count)]
+    verbose: u8,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -172,6 +177,13 @@ enum ConfigCommands {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    // Initialize logging for CLI (TUI initializes its own)
+    let is_tui = matches!(&cli.command, Some(Commands::Tui) | None);
+    if !is_tui {
+        init_cli_logging(cli.verbose);
+    }
+
     let output = Output::new(OutputFormat::from_flags(cli.json, cli.quiet));
 
     // Commands that don't need initialization or the store
@@ -512,4 +524,29 @@ async fn auto_sync(store: &mut Store, config_path: Option<&PathBuf>, output: &Ou
             eprintln!("⚠ Auto-sync failed: {}", e);
         }
     }
+}
+
+/// Initialize logging for CLI mode
+///
+/// Log level is determined by:
+/// 1. ROTT_LOG environment variable (e.g., ROTT_LOG=debug)
+/// 2. -v flags: -v = info, -vv = debug, -vvv = trace
+/// 3. Default: warn (errors and warnings only)
+fn init_cli_logging(verbose: u8) {
+    let env_filter = EnvFilter::try_from_env("ROTT_LOG").unwrap_or_else(|_| {
+        let level = match verbose {
+            0 => "warn",
+            1 => "info",
+            2 => "debug",
+            _ => "trace",
+        };
+        // Only show rott logs, not dependencies
+        EnvFilter::new(format!("rott_core={},rott_cli={}", level, level))
+    });
+
+    tracing_subscriber::fmt()
+        .with_env_filter(env_filter)
+        .with_target(false)
+        .with_writer(std::io::stderr)
+        .init();
 }

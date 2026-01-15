@@ -316,7 +316,7 @@ async fn wait_for_peer(
     loop {
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
         if remaining.is_zero() {
-            anyhow::bail!("Timeout waiting for peer response");
+            anyhow::bail!("Timeout waiting for sync server. Check that the server is running.");
         }
 
         tokio::select! {
@@ -328,16 +328,16 @@ async fn wait_for_peer(
                         }
                     }
                     Some(Ok(Message::Close(_))) | None => {
-                        anyhow::bail!("Connection closed during handshake");
+                        anyhow::bail!("Sync server closed connection during handshake");
                     }
                     Some(Err(e)) => {
-                        anyhow::bail!("WebSocket error: {}", e);
+                        anyhow::bail!("Sync connection error: {}", e);
                     }
                     _ => {}
                 }
             }
             _ = tokio::time::sleep(remaining) => {
-                anyhow::bail!("Timeout waiting for peer response");
+                anyhow::bail!("Timeout waiting for sync server. Check that the server is running.");
             }
         }
     }

@@ -10,6 +10,7 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use tracing::debug;
 
 /// Environment variable prefix
 const ENV_PREFIX: &str = "ROTT";
@@ -32,6 +33,10 @@ pub struct Config {
     /// Tag used for Favorites filter in TUI
     #[serde(default)]
     pub favorite_tag: Option<String>,
+
+    /// Log file path (optional, for TUI logging)
+    #[serde(default)]
+    pub log_file: Option<PathBuf>,
 }
 
 impl Default for Config {
@@ -41,6 +46,7 @@ impl Default for Config {
             sync_url: None,
             sync_enabled: false,
             favorite_tag: None,
+            log_file: None,
         }
     }
 }
@@ -74,17 +80,20 @@ impl Config {
     /// Environment variables are still applied as overrides.
     /// If the file doesn't exist, defaults are used.
     pub fn load_from_path(path: &PathBuf) -> Result<Self> {
+        debug!("Loading config from {:?}", path);
         let mut config = if path.exists() {
             let content = std::fs::read_to_string(path)
                 .with_context(|| format!("Failed to read config file: {:?}", path))?;
             toml::from_str(&content)
                 .with_context(|| format!("Failed to parse config file: {:?}", path))?
         } else {
+            debug!("Config file not found, using defaults");
             Self::default()
         };
 
         config.apply_env_overrides();
         config.ensure_data_dir()?;
+        debug!("Config loaded: data_dir={:?}", config.data_dir);
         Ok(config)
     }
 
@@ -302,6 +311,7 @@ mod tests {
             sync_url: Some("ws://sync.example.com".to_string()),
             sync_enabled: true,
             favorite_tag: None,
+            log_file: None,
         };
 
         let toml_str = toml::to_string_pretty(&config).unwrap();

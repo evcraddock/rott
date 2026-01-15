@@ -32,6 +32,8 @@ mod app;
 mod sync;
 mod ui;
 
+use std::fs::File;
+
 use anyhow::Result;
 use crossterm::{
     cursor,
@@ -40,8 +42,10 @@ use crossterm::{
     ExecutableCommand,
 };
 use ratatui::prelude::*;
-use rott_core::Store;
+use rott_core::{Config, Store};
 use std::io::stdout;
+use tracing::info;
+use tracing_subscriber::EnvFilter;
 
 use app::{App, CommandResult, CommandType, EditorTask, InputMode, SyncIndicator};
 use rott_core::sync::{PersistentSyncHandle, SyncCommand, SyncTaskEvent};
@@ -54,6 +58,9 @@ pub async fn run() -> Result<()> {
     // Open the store
     let mut store = Store::open()?;
     let config = store.config().clone();
+
+    // Initialize TUI logging (file-based, only if ROTT_LOG is set)
+    init_tui_logging(&config);
 
     // Setup terminal
     enable_raw_mode()?;
@@ -123,9 +130,13 @@ async fn run_app<B: Backend>(
                         }
                         SyncTaskEvent::DocumentUpdated => {
                             // Remote changes received - rebuild projection and refresh UI
-                            store.rebuild_projection()?;
-                            app.refresh(store)?;
-                            app.set_status("Synced remote changes".to_string());
+                            if let Err(e) = store.rebuild_projection() {
+                                app.set_error(format!("Failed to rebuild after sync: {}", e));
+                            } else if let Err(e) = app.refresh(store) {
+                                app.set_error(format!("Failed to refresh after sync: {}", e));
+                            } else {
+                                app.set_status("Synced remote changes".to_string());
+                            }
                         }
                         SyncTaskEvent::Error(msg) => {
                             app.set_status(format!("Sync error: {}", msg));
@@ -154,6 +165,12 @@ async fn run_app<B: Backend>(
                             continue;
                         }
 
+                        // If error modal is showing, any key dismisses it
+                        if app.has_error() {
+                            app.clear_error();
+                            continue;
+                        }
+
                         // If help is showing, any key dismisses it
                         if app.show_help {
                             app.show_help = false;
@@ -176,7 +193,11 @@ async fn run_app<B: Backend>(
                                     }
                                 }
                             }
-                            InputMode::Filter => handle_filter_mode(app, store, key.code)?,
+                            InputMode::Filter => {
+                                if let Err(e) = handle_filter_mode(app, store, key.code) {
+                                    app.set_error(format!("Filter error: {}", e));
+                                }
+                            }
                         }
                     }
                 }
@@ -270,7 +291,9 @@ async fn handle_normal_mode(
 
         // Enter: select/activate
         KeyCode::Enter => {
-            app.handle_enter(store)?;
+            if let Err(e) = app.handle_enter(store) {
+                app.set_error(format!("Action failed: {}", e));
+            }
         }
 
         // Space: toggle accordion (when in filters pane on TagsHeader)
@@ -296,12 +319,18 @@ async fn handle_normal_mode(
             app.enter_command_mode(CommandType::Edit);
         }
         KeyCode::Char('d') => {
-            app.delete_current_link(store)?;
-            return Ok(Some(true)); // Needs push
+            if let Err(e) = app.delete_current_link(store) {
+                app.set_error(format!("Failed to delete link: {}", e));
+            } else {
+                return Ok(Some(true)); // Needs push
+            }
         }
         KeyCode::Char('u') => {
-            app.undo_delete(store)?;
-            return Ok(Some(true)); // Needs push
+            if let Err(e) = app.undo_delete(store) {
+                app.set_error(format!("Failed to undo delete: {}", e));
+            } else {
+                return Ok(Some(true)); // Needs push
+            }
         }
 
         // Filter mode
@@ -371,7 +400,14 @@ async fn handle_command_mode<B: Backend>(
 
         // Execute command
         KeyCode::Enter => {
-            let result = app.execute_command(store)?;
+            let result = match app.execute_command(store) {
+                Ok(r) => r,
+                Err(e) => {
+                    app.set_error(format!("Command failed: {}", e));
+                    app.exit_input_mode();
+                    return Ok(Some(false));
+                }
+            };
             app.exit_input_mode();
 
             match result {
@@ -410,7 +446,18 @@ async fn handle_command_mode<B: Backend>(
 
                     match task {
                         EditorTask::Note => {
-                            let content = editor::edit_text("# Note\n\nEnter your note here...")?;
+                            let content =
+                                match editor::edit_text("# Note\n\nEnter your note here...") {
+                                    Ok(c) => c,
+                                    Err(e) => {
+                                        // Re-enter TUI before showing error
+                                        enable_raw_mode()?;
+                                        stdout().execute(EnterAlternateScreen)?;
+                                        terminal.clear()?;
+                                        app.set_error(format!("Editor failed: {}", e));
+                                        return Ok(Some(false));
+                                    }
+                                };
                             let body: String = content
                                 .lines()
                                 .filter(|line| {
@@ -428,8 +475,11 @@ async fn handle_command_mode<B: Backend>(
                             terminal.clear()?;
 
                             if !body.is_empty() {
-                                app.add_note_to_current(store, &body)?;
-                                needs_push = true;
+                                if let Err(e) = app.add_note_to_current(store, &body) {
+                                    app.set_error(format!("Failed to add note: {}", e));
+                                } else {
+                                    needs_push = true;
+                                }
                             } else {
                                 app.set_status("Note cancelled (empty)".to_string());
                             }
@@ -449,17 +499,31 @@ async fn handle_command_mode<B: Backend>(
                                     link.tags.join(", ")
                                 );
 
-                                let content = editor::edit_text(&template)?;
+                                let content = match editor::edit_text(&template) {
+                                    Ok(c) => c,
+                                    Err(e) => {
+                                        // Re-enter TUI before showing error
+                                        enable_raw_mode()?;
+                                        stdout().execute(EnterAlternateScreen)?;
+                                        terminal.clear()?;
+                                        app.set_error(format!("Editor failed: {}", e));
+                                        return Ok(Some(false));
+                                    }
+                                };
 
                                 enable_raw_mode()?;
                                 stdout().execute(EnterAlternateScreen)?;
                                 terminal.clear()?;
 
                                 if let Some(updated) = parse_link_edit(&content, link) {
-                                    store.update_link(&updated)?;
-                                    app.set_status("Link updated".to_string());
-                                    app.refresh(store)?;
-                                    needs_push = true;
+                                    if let Err(e) = store.update_link(&updated) {
+                                        app.set_error(format!("Failed to update link: {}", e));
+                                    } else if let Err(e) = app.refresh(store) {
+                                        app.set_error(format!("Failed to refresh: {}", e));
+                                    } else {
+                                        app.set_status("Link updated".to_string());
+                                        needs_push = true;
+                                    }
                                 } else {
                                     app.set_status("Edit cancelled".to_string());
                                 }
@@ -503,7 +567,9 @@ fn handle_filter_mode(app: &mut App, store: &Store, code: KeyCode) -> Result<()>
         // Cancel filter
         KeyCode::Esc => {
             app.exit_input_mode();
-            app.clear_filter(store)?;
+            if let Err(e) = app.clear_filter(store) {
+                app.set_error(format!("Failed to clear filter: {}", e));
+            }
         }
 
         // Confirm filter (stay in filtered view)
@@ -578,4 +644,42 @@ fn parse_link_edit(content: &str, original: &rott_core::Link) -> Option<rott_cor
     } else {
         None
     }
+}
+
+/// Initialize logging for TUI mode
+///
+/// Only initializes if ROTT_LOG environment variable is set.
+/// Logs to file (config.log_file or default {data_dir}/debug.log).
+fn init_tui_logging(config: &Config) {
+    // Only log if ROTT_LOG is set
+    let Ok(log_level) = std::env::var("ROTT_LOG") else {
+        return;
+    };
+
+    // Determine log file path
+    let log_path = config
+        .log_file
+        .clone()
+        .unwrap_or_else(|| config.data_dir.join("debug.log"));
+
+    // Create log file
+    let log_file = match File::create(&log_path) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("Warning: Could not create log file {:?}: {}", log_path, e);
+            return;
+        }
+    };
+
+    let env_filter = EnvFilter::new(format!("rott_core={},rott_cli={}", log_level, log_level));
+
+    // Initialize file-based logging (ignore error if already initialized)
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(env_filter)
+        .with_target(false)
+        .with_ansi(false)
+        .with_writer(log_file)
+        .try_init();
+
+    info!("TUI logging initialized to {:?}", log_path);
 }

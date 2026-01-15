@@ -159,6 +159,7 @@ mod tests {
             sync_url: None,
             sync_enabled: false,
             favorite_tag: None,
+            log_file: None,
         }
     }
 

@@ -383,6 +383,7 @@ mod tests {
             sync_url: None,
             sync_enabled: false,
             favorite_tag: None,
+            log_file: None,
         }
     }
 
@@ -655,6 +656,7 @@ mod tests {
             sync_url: None,
             sync_enabled: false,
             favorite_tag: None,
+            log_file: None,
         };
         let persistence = AutomergePersistence::new(config);
 

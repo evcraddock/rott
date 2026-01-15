@@ -30,7 +30,10 @@ pub fn edit_text(initial_content: &str) -> Result<String> {
     if !status.success() {
         // Clean up temp file
         let _ = fs::remove_file(&temp_path);
-        bail!("Editor exited with non-zero status");
+        bail!(
+            "Editor '{}' exited with non-zero status. Check that your editor is configured correctly.",
+            editor
+        );
     }
 
     // Read edited content

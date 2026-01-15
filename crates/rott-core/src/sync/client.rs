@@ -12,6 +12,7 @@ use tokio::net::TcpStream;
 use tokio::sync::{mpsc, watch, Mutex};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
+use tracing::{debug, info, warn};
 
 use super::message::{ClientMessage, PeerId, ServerMessage};
 use super::state::SyncState;
@@ -117,12 +118,14 @@ impl SyncClient {
     ///
     /// This is a one-shot sync - connects, syncs, then disconnects.
     pub async fn sync_once(&self, doc: &mut RottDocument) -> Result<bool> {
+        info!("Starting sync to {}", self.url);
         self.set_status(SyncStatus::Connecting);
 
         // Connect
         let ws_stream = match self.connect().await {
             Ok(s) => s,
             Err(e) => {
+                warn!("Sync connection failed: {}", e);
                 self.set_status(SyncStatus::Error);
                 self.emit(SyncEvent::Error(e.to_string()));
                 return Err(e);
@@ -130,17 +133,23 @@ impl SyncClient {
         };
 
         self.set_status(SyncStatus::Connected);
+        debug!("Connected to sync server");
 
         // Sync
         let result = self.do_sync(ws_stream, doc).await;
 
         self.set_status(SyncStatus::Disconnected);
+        match &result {
+            Ok(updated) => info!("Sync complete, document_updated={}", updated),
+            Err(e) => warn!("Sync failed: {}", e),
+        }
 
         result
     }
 
     /// Connect to the sync server
     async fn connect(&self) -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>> {
+        debug!("Connecting to {}", self.url);
         let (ws_stream, _response) = connect_async(&self.url)
             .await
             .context("Failed to connect to sync server")?;
@@ -170,7 +179,10 @@ impl SyncClient {
         loop {
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
-                anyhow::bail!("Timeout waiting for peer response");
+                anyhow::bail!(
+                    "Timeout waiting for sync server response ({}). Check server is running.",
+                    self.url
+                );
             }
 
             tokio::select! {
@@ -195,19 +207,25 @@ impl SyncClient {
                             }
                         }
                         Some(Ok(Message::Close(_))) => {
-                            anyhow::bail!("Connection closed during handshake");
+                            anyhow::bail!(
+                                "Sync server ({}) closed connection during handshake",
+                                self.url
+                            );
                         }
                         Some(Err(e)) => {
-                            anyhow::bail!("WebSocket error: {}", e);
+                            anyhow::bail!("Sync connection error ({}): {}", self.url, e);
                         }
                         None => {
-                            anyhow::bail!("Connection closed");
+                            anyhow::bail!("Sync server ({}) closed connection", self.url);
                         }
                         _ => {}
                     }
                 }
                 _ = tokio::time::sleep(remaining) => {
-                    anyhow::bail!("Timeout waiting for peer response");
+                    anyhow::bail!(
+                        "Timeout waiting for sync server response ({}). Check server is running.",
+                        self.url
+                    );
                 }
             }
         }

@@ -10,3 +10,6 @@ sync_enabled = false
 
 # Optional: tag used for Favorites filter in TUI
 # favorite_tag = "favorites"
+
+# Optional: log file path for TUI logging (requires ROTT_LOG env var)
+# log_file = "hack/data/debug.log"

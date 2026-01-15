@@ -118,6 +118,8 @@ pub struct App {
     pub sync_status: SyncIndicator,
     /// Pending 'g' keypress for gg sequence (with timestamp)
     pub pending_g: Option<std::time::Instant>,
+    /// Error message to display in modal
+    pub error_message: Option<String>,
 }
 
 /// Sync status indicator
@@ -175,6 +177,7 @@ impl App {
                 SyncIndicator::Disabled
             },
             pending_g: None,
+            error_message: None,
         })
     }
 
@@ -221,6 +224,21 @@ impl App {
                 self.status_message_time = None;
             }
         }
+    }
+
+    /// Set an error message (displayed in modal, must be dismissed)
+    pub fn set_error(&mut self, message: impl Into<String>) {
+        self.error_message = Some(message.into());
+    }
+
+    /// Clear the error message
+    pub fn clear_error(&mut self) {
+        self.error_message = None;
+    }
+
+    /// Check if there's an error to display
+    pub fn has_error(&self) -> bool {
+        self.error_message.is_some()
     }
 
     /// Toggle help overlay

@@ -21,7 +21,8 @@ pub fn show(config_path: Option<&PathBuf>, output: &Output) -> Result<()> {
                     "data_dir": config.data_dir,
                     "sync_url": config.sync_url,
                     "sync_enabled": config.sync_enabled,
-                    "favorite_tag": config.favorite_tag
+                    "favorite_tag": config.favorite_tag,
+                    "log_file": config.log_file
                 })
             );
         }
@@ -42,6 +43,14 @@ pub fn show(config_path: Option<&PathBuf>, output: &Output) -> Result<()> {
             println!(
                 "  favorite_tag: {}",
                 config.favorite_tag.as_deref().unwrap_or("(not set)")
+            );
+            println!(
+                "  log_file:     {}",
+                config
+                    .log_file
+                    .as_ref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "(not set)".to_string())
             );
             println!();
             println!("Config file: {}", effective_path.display());
@@ -84,10 +93,17 @@ pub fn set(
                 Some(value.clone())
             };
         }
+        "log_file" => {
+            config.log_file = if value.is_empty() || value == "none" {
+                None
+            } else {
+                Some(value.clone().into())
+            };
+        }
         _ => {
             bail!(
                 "Unknown configuration key: '{}'\n\
-                 Valid keys: data_dir, sync_url, sync_enabled, favorite_tag",
+                 Valid keys: data_dir, sync_url, sync_enabled, favorite_tag, log_file",
                 key
             );
         }

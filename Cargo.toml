@@ -55,6 +55,10 @@ bs58 = { version = "0.5", features = ["check"] }
 dirs = "5.0"
 open = "5.3"
 
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
 # Testing
 tempfile = "3.14"
 
