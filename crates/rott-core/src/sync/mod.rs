@@ -14,14 +14,14 @@
 //!
 //! ### One-shot sync (CLI style)
 //!
-//! ```ignore
+//! ```text
 //! let client = SyncClient::new("ws://localhost:3030", doc_id);
 //! client.sync_once(&mut doc).await?;
 //! ```
 //!
 //! ### Persistent sync (TUI style)
 //!
-//! ```ignore
+//! ```text
 //! let handle = spawn_sync_task(config, doc, sync_state);
 //! // Send commands
 //! handle.command_tx.send(SyncCommand::PushChanges).await?;

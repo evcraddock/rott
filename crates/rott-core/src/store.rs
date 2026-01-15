@@ -16,7 +16,7 @@
 //!
 //! ## Usage
 //!
-//! ```ignore
+//! ```text
 //! let store = Store::open()?;  // Creates or loads existing
 //!
 //! // Add data

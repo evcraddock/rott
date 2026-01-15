@@ -10,9 +10,7 @@
 //!
 //! # Quick Start
 //!
-//! ```ignore
-//! use rott_core::{Store, Link, Note};
-//!
+//! ```text
 //! let mut store = Store::open()?;
 //!
 //! // Add a link
