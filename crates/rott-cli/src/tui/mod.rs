@@ -145,9 +145,9 @@ pub async fn run(config_path: Option<&std::path::PathBuf>) -> Result<()> {
         stdout().execute(LeaveAlternateScreen)?;
     }
 
-    // Now open the store normally
-    let mut store = Store::open()?;
-    let config = store.config().clone();
+    // Now open the store normally (reload config in case wizard modified it)
+    let config = Config::load_with_cli_override(config_path)?;
+    let mut store = Store::open_with_config(config.clone())?;
 
     // Initialize TUI logging (file-based, only if ROTT_LOG is set)
     init_tui_logging(&config);
