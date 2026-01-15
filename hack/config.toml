@@ -1,0 +1,12 @@
+# Test/development configuration for ROTT
+# Usage: rott --config hack/config.toml <command>
+
+# Data directory for test data (relative to project root)
+data_dir = "hack/data"
+
+# Sync settings (disabled for local testing)
+sync_enabled = false
+# sync_url = "ws://localhost:3030"
+
+# Optional: tag used for Favorites filter in TUI
+# favorite_tag = "favorites"

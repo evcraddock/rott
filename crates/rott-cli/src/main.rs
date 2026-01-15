@@ -4,6 +4,7 @@
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 use rott_core::{Config, DocumentId, Identity, Store};
 
@@ -21,6 +22,10 @@ use output::{Output, OutputFormat};
 #[command(version)]
 #[command(propagate_version = true)]
 struct Cli {
+    /// Path to config file
+    #[arg(short = 'c', long, global = true)]
+    config: Option<PathBuf>,
+
     /// Output as JSON
     #[arg(long, global = true)]
     json: bool,
@@ -172,10 +177,10 @@ async fn main() -> Result<()> {
     // Commands that don't need initialization or the store
     match &cli.command {
         Some(Commands::Config { command }) => {
-            return handle_config_command(command.clone(), &output);
+            return handle_config_command(command.clone(), cli.config.as_ref(), &output);
         }
         Some(Commands::Init { new, join }) => {
-            return handle_init_command(*new, join.clone(), &output);
+            return handle_init_command(*new, join.clone(), cli.config.as_ref(), &output);
         }
         _ => {}
     }
@@ -206,7 +211,7 @@ async fn main() -> Result<()> {
     // Sync command should work in this state to perform initial sync
     if identity.is_pending_sync()? {
         if matches!(&cli.command, Some(Commands::Sync)) {
-            let config = Config::load()?;
+            let config = Config::load_with_cli_override(cli.config.as_ref())?;
             return commands::sync::initial_sync(&config, &output).await;
         } else {
             anyhow::bail!(
@@ -222,7 +227,8 @@ async fn main() -> Result<()> {
     }
 
     // Open store for commands that need it
-    let mut store = Store::open()?;
+    let config = Config::load_with_cli_override(cli.config.as_ref())?;
+    let mut store = Store::open_with_config(config)?;
 
     // Determine if this is a read or write command
     let is_write = matches!(
@@ -248,7 +254,7 @@ async fn main() -> Result<()> {
 
     // Sync before read commands (to get latest data)
     if !is_write && !is_manual_sync {
-        auto_sync(&mut store, &output).await;
+        auto_sync(&mut store, cli.config.as_ref(), &output).await;
     }
 
     let result = match cli.command.unwrap() {
@@ -259,12 +265,12 @@ async fn main() -> Result<()> {
         Commands::Tags => commands::tag::list(&store, &output),
         Commands::Config { .. } => unreachable!(), // Handled above
         Commands::Status => commands::status::show(&store, &output),
-        Commands::Sync => commands::sync::sync(&mut store, &output).await,
+        Commands::Sync => commands::sync::sync(&mut store, cli.config.as_ref(), &output).await,
     };
 
     // Sync after write commands (to push changes)
     if is_write {
-        auto_sync(&mut store, &output).await;
+        auto_sync(&mut store, cli.config.as_ref(), &output).await;
     }
 
     result
@@ -300,14 +306,25 @@ fn handle_note_command(command: NoteCommands, store: &mut Store, output: &Output
     }
 }
 
-fn handle_config_command(command: Option<ConfigCommands>, output: &Output) -> Result<()> {
+fn handle_config_command(
+    command: Option<ConfigCommands>,
+    config_path: Option<&PathBuf>,
+    output: &Output,
+) -> Result<()> {
     match command {
-        Some(ConfigCommands::Show) | None => commands::config::show(output),
-        Some(ConfigCommands::Set { key, value }) => commands::config::set(key, value, output),
+        Some(ConfigCommands::Show) | None => commands::config::show(config_path, output),
+        Some(ConfigCommands::Set { key, value }) => {
+            commands::config::set(key, value, config_path, output)
+        }
     }
 }
 
-fn handle_init_command(new: bool, join: Option<String>, output: &Output) -> Result<()> {
+fn handle_init_command(
+    new: bool,
+    join: Option<String>,
+    config_path: Option<&PathBuf>,
+    output: &Output,
+) -> Result<()> {
     let identity = Identity::new()?;
 
     if identity.is_initialized() {
@@ -340,7 +357,7 @@ fn handle_init_command(new: bool, join: Option<String>, output: &Output) -> Resu
             println!();
             println!("Identity configured.");
             println!();
-            let config = Config::load()?;
+            let config = Config::load_with_cli_override(config_path)?;
             if config.sync_url.is_none() {
                 println!("Sync server not configured. Your data will sync once you set one:");
                 println!("  rott config set sync_url ws://your-server:3030");
@@ -479,8 +496,8 @@ fn run_first_time_setup(_output: &Output) -> Result<()> {
 }
 
 /// Auto-sync if sync is enabled, silently handles errors
-async fn auto_sync(store: &mut Store, output: &Output) {
-    let config = match Config::load() {
+async fn auto_sync(store: &mut Store, config_path: Option<&PathBuf>, output: &Output) {
+    let config = match Config::load_with_cli_override(config_path) {
         Ok(c) => c,
         Err(_) => return,
     };

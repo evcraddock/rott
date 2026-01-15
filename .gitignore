@@ -20,3 +20,4 @@ target/
 dev.log
 dev-prev.log
 data/
+hack/data/

@@ -1,5 +1,7 @@
 //! Sync command handler
 
+use std::path::PathBuf;
+
 use anyhow::{bail, Result};
 
 use rott_core::sync::{SyncClient, SyncState};
@@ -25,8 +27,12 @@ pub async fn initial_sync(config: &Config, output: &Output) -> Result<()> {
 }
 
 /// Sync with the remote server
-pub async fn sync(store: &mut Store, output: &Output) -> Result<()> {
-    let config = store.config();
+pub async fn sync(store: &mut Store, config_path: Option<&PathBuf>, output: &Output) -> Result<()> {
+    // Use CLI config path if provided, otherwise use store's config
+    let config = match config_path {
+        Some(path) => Config::load_with_cli_override(Some(path))?,
+        None => store.config().clone(),
+    };
 
     if !config.sync_enabled {
         bail!(

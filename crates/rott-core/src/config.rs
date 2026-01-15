@@ -56,6 +56,19 @@ impl Config {
         Self::load_from_path(&Self::config_file_path())
     }
 
+    /// Load configuration with optional CLI path override
+    ///
+    /// Order of precedence for config file path (highest to lowest):
+    /// 1. `cli_path` argument (from --config flag)
+    /// 2. ROTT_CONFIG environment variable
+    /// 3. Default path (~/.config/rott/config.toml)
+    ///
+    /// Environment variables for individual settings still override file values.
+    pub fn load_with_cli_override(cli_path: Option<&PathBuf>) -> Result<Self> {
+        let path = cli_path.cloned().unwrap_or_else(Self::config_file_path);
+        Self::load_from_path(&path)
+    }
+
     /// Load configuration from a specific path
     ///
     /// Environment variables are still applied as overrides.
@@ -110,17 +123,20 @@ impl Config {
         Ok(())
     }
 
-    /// Save configuration to file
+    /// Save configuration to default file location
     pub fn save(&self) -> Result<()> {
-        let config_path = Self::config_file_path();
+        self.save_to_path(&Self::config_file_path())
+    }
 
+    /// Save configuration to a specific path
+    pub fn save_to_path(&self, config_path: &PathBuf) -> Result<()> {
         if let Some(parent) = config_path.parent() {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("Failed to create config directory: {:?}", parent))?;
         }
 
         let content = toml::to_string_pretty(self).context("Failed to serialize config")?;
-        std::fs::write(&config_path, content)
+        std::fs::write(config_path, content)
             .with_context(|| format!("Failed to write config file: {:?}", config_path))?;
         Ok(())
     }

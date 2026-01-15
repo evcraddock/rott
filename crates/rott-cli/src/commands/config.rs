@@ -1,5 +1,7 @@
 //! Config command handlers
 
+use std::path::PathBuf;
+
 use anyhow::{bail, Context, Result};
 
 use rott_core::Config;
@@ -7,8 +9,9 @@ use rott_core::Config;
 use crate::output::{Output, OutputFormat};
 
 /// Show current configuration
-pub fn show(output: &Output) -> Result<()> {
-    let config = Config::load().context("Failed to load configuration")?;
+pub fn show(config_path: Option<&PathBuf>, output: &Output) -> Result<()> {
+    let config =
+        Config::load_with_cli_override(config_path).context("Failed to load configuration")?;
 
     match output.format {
         OutputFormat::Json => {
@@ -26,6 +29,9 @@ pub fn show(output: &Output) -> Result<()> {
             println!("{}", config.data_dir.display());
         }
         OutputFormat::Human => {
+            let effective_path = config_path
+                .cloned()
+                .unwrap_or_else(Config::config_file_path);
             println!("Configuration:");
             println!("  data_dir:     {}", config.data_dir.display());
             println!(
@@ -38,7 +44,7 @@ pub fn show(output: &Output) -> Result<()> {
                 config.favorite_tag.as_deref().unwrap_or("(not set)")
             );
             println!();
-            println!("Config file: {}", Config::config_file_path().display());
+            println!("Config file: {}", effective_path.display());
         }
     }
 
@@ -46,8 +52,14 @@ pub fn show(output: &Output) -> Result<()> {
 }
 
 /// Set a configuration value
-pub fn set(key: String, value: String, output: &Output) -> Result<()> {
-    let mut config = Config::load().context("Failed to load configuration")?;
+pub fn set(
+    key: String,
+    value: String,
+    config_path: Option<&PathBuf>,
+    output: &Output,
+) -> Result<()> {
+    let mut config =
+        Config::load_with_cli_override(config_path).context("Failed to load configuration")?;
 
     match key.as_str() {
         "data_dir" => {
@@ -81,7 +93,13 @@ pub fn set(key: String, value: String, output: &Output) -> Result<()> {
         }
     }
 
-    config.save().context("Failed to save configuration")?;
+    // Save to the CLI-specified path or default
+    let save_path = config_path
+        .cloned()
+        .unwrap_or_else(Config::config_file_path);
+    config
+        .save_to_path(&save_path)
+        .context("Failed to save configuration")?;
 
     output.success(&format!("Set {} = {}", key, value));
 
