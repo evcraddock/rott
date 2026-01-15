@@ -120,6 +120,19 @@ pub struct App {
     pub pending_g: Option<std::time::Instant>,
     /// Error message to display in modal
     pub error_message: Option<String>,
+    /// Whether device panel is visible
+    pub show_device_panel: bool,
+    /// Device info for display in settings panel
+    pub device_info: DeviceInfo,
+}
+
+/// Device information for settings panel
+#[derive(Debug, Clone)]
+pub struct DeviceInfo {
+    /// Root document ID
+    pub root_id: String,
+    /// Sync server URL (if configured)
+    pub sync_url: Option<String>,
 }
 
 /// Sync status indicator
@@ -178,6 +191,11 @@ impl App {
             },
             pending_g: None,
             error_message: None,
+            show_device_panel: false,
+            device_info: DeviceInfo {
+                root_id: store.root_id().to_string(),
+                sync_url: store.config().sync_url.clone(),
+            },
         })
     }
 
@@ -244,6 +262,11 @@ impl App {
     /// Toggle help overlay
     pub fn toggle_help(&mut self) {
         self.show_help = !self.show_help;
+    }
+
+    /// Toggle device settings panel
+    pub fn toggle_device_panel(&mut self) {
+        self.show_device_panel = !self.show_device_panel;
     }
 
     /// Get the currently selected link

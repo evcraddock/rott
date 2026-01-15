@@ -29,6 +29,7 @@
 //! - :: Command mode
 
 mod app;
+mod setup;
 mod sync;
 mod ui;
 
@@ -42,20 +43,109 @@ use crossterm::{
     ExecutableCommand,
 };
 use ratatui::prelude::*;
-use rott_core::{Config, Store};
+use rott_core::{Config, Identity, Store};
 use std::io::stdout;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 use app::{App, CommandResult, CommandType, EditorTask, InputMode, SyncIndicator};
 use rott_core::sync::{PersistentSyncHandle, SyncCommand, SyncTaskEvent};
+use setup::{SetupResult, SetupWizard};
 
 use crate::editor;
 use crate::metadata;
 
 /// Run the TUI application
 pub async fn run() -> Result<()> {
-    // Open the store
+    // Load config first
+    let config = Config::load()?;
+
+    // Check if we need to run the setup wizard
+    let identity = Identity::with_config(config.clone());
+
+    if !identity.is_initialized() {
+        // Run setup wizard first
+        enable_raw_mode()?;
+        stdout().execute(EnterAlternateScreen)?;
+        let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
+
+        let mut wizard = SetupWizard::new(config.clone());
+        let result = wizard.run(&mut terminal).await;
+
+        // Restore terminal
+        disable_raw_mode()?;
+        stdout().execute(LeaveAlternateScreen)?;
+
+        match result {
+            Ok(SetupResult::Complete) => {
+                // Continue to main TUI
+            }
+            Ok(SetupResult::Quit) | Err(_) => {
+                return result.map(|_| ());
+            }
+        }
+    } else if identity.is_pending_sync()? {
+        // User has joined but hasn't synced yet
+        // Show a message and attempt sync if configured
+        enable_raw_mode()?;
+        stdout().execute(EnterAlternateScreen)?;
+        let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
+
+        // Try to sync
+        if config.sync_enabled && config.sync_url.is_some() {
+            // Draw syncing message
+            terminal.draw(|frame| {
+                let area = frame.area();
+                let msg = ratatui::widgets::Paragraph::new(vec![
+                    ratatui::text::Line::from(""),
+                    ratatui::text::Line::from(ratatui::text::Span::styled(
+                        "↻ Syncing your data...",
+                        ratatui::style::Style::default().fg(ratatui::style::Color::Yellow),
+                    )),
+                    ratatui::text::Line::from(""),
+                    ratatui::text::Line::from("This is your first sync after joining."),
+                    ratatui::text::Line::from("Please wait while we pull your data."),
+                ])
+                .alignment(ratatui::layout::Alignment::Center)
+                .block(
+                    ratatui::widgets::Block::default()
+                        .borders(ratatui::widgets::Borders::ALL)
+                        .title(" Initial Sync "),
+                );
+                let centered = centered_rect(60, 30, area);
+                frame.render_widget(ratatui::widgets::Clear, centered);
+                frame.render_widget(msg, centered);
+            })?;
+
+            match Store::initial_sync(&config).await {
+                Ok(()) => {
+                    // Success - continue to main TUI
+                }
+                Err(e) => {
+                    // Show error and exit
+                    disable_raw_mode()?;
+                    stdout().execute(LeaveAlternateScreen)?;
+                    anyhow::bail!("Initial sync failed: {}. Configure sync and try again.", e);
+                }
+            }
+        } else {
+            disable_raw_mode()?;
+            stdout().execute(LeaveAlternateScreen)?;
+            anyhow::bail!(
+                "Sync required but not configured.\n\n\
+                 You've joined an existing identity but haven't synced yet.\n\
+                 Configure sync to pull your data:\n\n\
+                   rott config set sync_url ws://your-server:3030\n\
+                   rott config set sync_enabled true\n\
+                   rott sync"
+            );
+        }
+
+        disable_raw_mode()?;
+        stdout().execute(LeaveAlternateScreen)?;
+    }
+
+    // Now open the store normally
     let mut store = Store::open()?;
     let config = store.config().clone();
 
@@ -174,6 +264,29 @@ async fn run_app<B: Backend>(
                         // If help is showing, any key dismisses it
                         if app.show_help {
                             app.show_help = false;
+                            continue;
+                        }
+
+                        // If device panel is showing, handle its keys
+                        if app.show_device_panel {
+                            match key.code {
+                                KeyCode::Esc | KeyCode::Char('q') => {
+                                    app.show_device_panel = false;
+                                }
+                                KeyCode::Char('y') => {
+                                    // Copy root ID to clipboard
+                                    if setup::clipboard_copy(&app.device_info.root_id) {
+                                        app.set_status("Root document ID copied to clipboard".to_string());
+                                    } else {
+                                        app.set_status("Clipboard not available - copy manually".to_string());
+                                    }
+                                    app.show_device_panel = false;
+                                }
+                                KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                    app.show_device_panel = false;
+                                }
+                                _ => {}
+                            }
                             continue;
                         }
 
@@ -317,6 +430,9 @@ async fn handle_normal_mode(
         }
         KeyCode::Char('e') => {
             app.enter_command_mode(CommandType::Edit);
+        }
+        KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
+            app.toggle_device_panel();
         }
         KeyCode::Char('d') => {
             if let Err(e) = app.delete_current_link(store) {
@@ -682,4 +798,31 @@ fn init_tui_logging(config: &Config) {
         .try_init();
 
     info!("TUI logging initialized to {:?}", log_path);
+}
+
+/// Helper to create a centered rect
+fn centered_rect(
+    percent_x: u16,
+    percent_y: u16,
+    area: ratatui::layout::Rect,
+) -> ratatui::layout::Rect {
+    use ratatui::layout::{Constraint, Direction, Layout};
+
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(area);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(popup_layout[1])[1]
 }

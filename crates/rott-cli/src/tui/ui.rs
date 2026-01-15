@@ -48,6 +48,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
         draw_help_overlay(frame);
     }
 
+    // Draw device panel if visible
+    if app.show_device_panel {
+        draw_device_panel(frame, app);
+    }
+
     // Draw error modal if there's an error (on top of everything)
     if let Some(ref error) = app.error_message {
         draw_error_modal(frame, error);
@@ -427,6 +432,7 @@ fn draw_help_overlay(frame: &mut Frame) {
         Line::from(""),
         Line::from("  /           Filter view"),
         Line::from("  :           Command mode"),
+        Line::from("  Ctrl+D      Device settings"),
         Line::from("  q           Quit"),
         Line::from(""),
         Line::from(vec![Span::styled(
@@ -441,6 +447,98 @@ fn draw_help_overlay(frame: &mut Frame) {
         .border_style(Style::default().add_modifier(Modifier::BOLD));
 
     let paragraph = Paragraph::new(help_text).block(block);
+    frame.render_widget(paragraph, popup_area);
+}
+
+/// Draw device settings panel
+fn draw_device_panel(frame: &mut Frame, app: &App) {
+    let area = frame.area();
+
+    // Calculate centered popup area
+    let popup_width = 70.min(area.width.saturating_sub(4));
+    let popup_height = 18.min(area.height.saturating_sub(4));
+    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
+    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+    // Clear the popup area
+    frame.render_widget(ratatui::widgets::Clear, popup_area);
+
+    // Sync status display
+    let sync_status_str = match app.sync_status {
+        SyncIndicator::Synced => ("✓ Connected", Color::Green),
+        SyncIndicator::Syncing => ("↻ Syncing", Color::Yellow),
+        SyncIndicator::Offline => ("⚡ Offline", Color::Gray),
+        SyncIndicator::Disabled => ("○ Disabled", Color::Gray),
+        SyncIndicator::Error => ("✗ Error", Color::Red),
+    };
+
+    let device_text = vec![
+        Line::from(vec![Span::styled(
+            "Device Information",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "Root Document ID: ",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(vec![
+            Span::raw("  "),
+            Span::styled(
+                &app.device_info.root_id,
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(
+                "Sync Server: ",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(
+                app.device_info
+                    .sync_url
+                    .as_deref()
+                    .unwrap_or("Not configured"),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled(
+                "Sync Status: ",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(sync_status_str.0, Style::default().fg(sync_status_str.1)),
+        ]),
+        Line::from(""),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("[y] ", Style::default().fg(Color::Yellow)),
+            Span::raw("Copy ID to clipboard"),
+        ]),
+        Line::from(vec![
+            Span::styled("[Esc] ", Style::default().fg(Color::Yellow)),
+            Span::raw("Close"),
+        ]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "Use this ID to set up ROTT on other devices",
+            Style::default().add_modifier(Modifier::DIM),
+        )]),
+    ];
+
+    let block = Block::default()
+        .title(" Device Settings (Ctrl+D) ")
+        .borders(Borders::ALL)
+        .border_style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        );
+
+    let paragraph = Paragraph::new(device_text).block(block);
     frame.render_widget(paragraph, popup_area);
 }
 
