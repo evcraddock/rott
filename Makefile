@@ -70,3 +70,9 @@ svc-stop: ## Stop sync server
 	@echo "🛑 Stopping sync server..."
 	@docker compose down
 	@echo "✅ Sync server stopped!"
+
+install-man: ## Install man pages to /usr/local/share/man/man1
+	@echo "📚 Installing man pages..."
+	@install -d /usr/local/share/man/man1
+	@install -m 644 man/*.1 /usr/local/share/man/man1/
+	@echo "✅ Man pages installed! Run 'man rott' to view."

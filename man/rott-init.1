@@ -1,0 +1,116 @@
+.TH ROTT-INIT 1 "January 2026" "ROTT 2.3.0" "User Commands"
+.SH NAME
+rott-init \- initialize ROTT for first-time setup
+.SH SYNOPSIS
+.B rott init
+[\fIOPTIONS\fR]
+.SH DESCRIPTION
+The \fBrott init\fR command initializes ROTT on a device. This is required
+before using any other ROTT commands.
+.PP
+There are two modes:
+.IP \(bu 2
+\fBNew identity\fR: Creates a new root document with a unique ID
+.IP \(bu 2
+\fBJoin existing\fR: Uses an existing root document ID to sync with other devices
+.PP
+When run without options, \fBrott init\fR shows an interactive prompt asking
+which mode to use.
+.SH OPTIONS
+.TP
+.B \-\-new
+Create a new identity without prompting. Use this for your first device
+or to start fresh.
+.TP
+.BR \-\-join " " \fIROOT_DOCUMENT_ID\fR
+Join an existing identity by providing the root document ID from another
+device. Use this to sync with an existing ROTT setup.
+.TP
+.BR \-c ", " \-\-config " " \fIFILE\fR
+Path to config file.
+.TP
+.B \-\-json
+Output as JSON.
+.TP
+.BR \-q ", " \-\-quiet
+Quiet mode.
+.TP
+.BR \-v ", " \-\-verbose
+Verbose output.
+.SH ROOT DOCUMENT ID
+Your root document ID is your identity in ROTT. It looks like:
+.RS
+.nf
+2DrjgbFkSxXwGBKnVGbLjtPnqTo3r
+.fi
+.RE
+.PP
+\fBIMPORTANT:\fR Save this ID somewhere safe after running \fBrott init\fR.
+You need it to set up additional devices. If you lose it and don't have
+it on any device, you cannot recover your data.
+.PP
+To view your root document ID at any time:
+.RS
+.nf
+$ rott status
+.fi
+.RE
+.SH EXAMPLES
+.SS First Device (Interactive)
+.RS
+.nf
+$ rott init
+? How would you like to set up ROTT?
+> Create new identity
+  Join existing identity
+
+Creating new identity...
+Your root document ID: 2DrjgbFkSxXwGBKnVGbLjtPnqTo3r
+
+IMPORTANT: Save this ID! You need it to set up other devices.
+.fi
+.RE
+.SS First Device (Non-Interactive)
+.RS
+.nf
+$ rott init --new
+Created new identity: 2DrjgbFkSxXwGBKnVGbLjtPnqTo3r
+.fi
+.RE
+.SS Additional Device
+.RS
+.nf
+$ rott init --join 2DrjgbFkSxXwGBKnVGbLjtPnqTo3r
+Joined existing identity.
+Run 'rott sync' to pull your data from the sync server.
+.fi
+.RE
+.SH POST-INIT SETUP
+After initialization, configure sync to enable multi-device access:
+.RS
+.nf
+$ rott config set sync_url ws://YOUR_SERVER:3030
+$ rott config set sync_enabled true
+$ rott sync
+.fi
+.RE
+.SH FILES
+.TP
+.I ~/.config/rott/config.toml
+Stores the root document ID and sync configuration.
+.TP
+.I ~/.local/share/rott/
+Data directory created during initialization.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+Error (e.g., already initialized, invalid root document ID).
+.SH SEE ALSO
+.BR rott (1),
+.BR rott-sync (1)
+.PP
+See \fIhttps://github.com/evcraddock/rott/blob/main/docs/IDENTITY.md\fR
+for detailed information about root document IDs.

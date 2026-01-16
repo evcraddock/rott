@@ -69,3 +69,6 @@ fi
 
 echo ""
 echo "Run 'rott --help' to get started, or just 'rott' to launch the TUI."
+echo ""
+echo "For man pages, clone the repo and run 'sudo make install-man':"
+echo "  git clone https://github.com/$REPO.git && cd rott && sudo make install-man"

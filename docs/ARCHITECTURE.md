@@ -19,7 +19,7 @@ ROTT v2 is a complete redesign of the original ROTT application. It transforms f
 
 ### Content Types
 
-ROTT manages two types of text-based content:
+ROTT manages links with attached notes:
 
 #### Links
 
@@ -28,20 +28,21 @@ Bookmarks with rich metadata:
 - Title
 - Source URL
 - Author(s)
-- Published date
 - Created date
+- Updated date
 - Description
 - Tags
+- Notes (annotations attached to the link)
 
 #### Notes
 
-Freeform text documents:
+Notes are **children of links**, serving as annotations or comments. They cannot exist independently.
 
-- Title
-- Body (markdown)
+- Title (optional)
+- Body
 - Created date
-- Modified date
-- Tags
+
+Notes do not have their own tags—they inherit context from their parent link.
 
 ### Ownership Model
 
@@ -145,21 +146,25 @@ The CLI and TUI share a common core library:
 ```
 rott/
 ├── crates/
-│   ├── rott-core/       # Shared library
-│   │   ├── documents/   # Automerge document handling
-│   │   ├── models/      # Link, Note data structures
-│   │   ├── storage/     # Local persistence
-│   │   └── sync/        # Sync server client
+│   ├── rott-core/           # Shared library
+│   │   ├── config.rs        # Application configuration
+│   │   ├── document.rs      # Automerge document handling
+│   │   ├── document_id.rs   # Document ID (automerge-repo compatible)
+│   │   ├── identity.rs      # User identity management
+│   │   ├── models.rs        # Link, Note data structures
+│   │   ├── store.rs         # Unified storage interface
+│   │   ├── storage/         # Automerge persistence + SQLite projection
+│   │   └── sync/            # Sync server client
 │   │
-│   ├── rott-cli/        # CLI binary (thin wrapper)
-│   │
-│   └── rott-tui/        # TUI binary (thin wrapper)
+│   └── rott-cli/            # CLI and TUI binary
+│       ├── commands/        # CLI command handlers
+│       └── tui/             # Terminal UI (ratatui)
 ```
 
 **Boundary:**
 
 - Core contains all business logic, data handling, storage, and sync
-- CLI/TUI contain only presentation and user input handling
+- CLI crate contains both CLI commands and TUI presentation
 
 ---
 
@@ -450,13 +455,13 @@ Items explicitly deferred from v2:
 
 Items to resolve during detailed planning:
 
-1. **Automerge document structure** - One document per item? Single root document?
-2. **Root document ID format** - Raw UUID, encoded, human-readable?
+1. ~~**Automerge document structure**~~ - **Resolved:** Single root document per user
+2. ~~**Root document ID format**~~ - **Resolved:** Base58-encoded with checksum (bs58)
 3. **Web authentication method** - Password, passkey, magic link?
 4. **Web server stack** - Language, framework choices
 5. **iOS specifics** - SwiftUI vs UIKit, data storage approach
 6. **Sync conflict UX** - How to surface merge information to users (if at all)
-7. **Device linking UX** - QR code, manual entry, local network discovery?
+7. ~~**Device linking UX**~~ - **Resolved:** Manual entry via `rott init --join <id>`
 
 ---
 

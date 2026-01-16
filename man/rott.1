@@ -1,0 +1,157 @@
+.TH ROTT 1 "January 2026" "ROTT 2.3.0" "User Commands"
+.SH NAME
+rott \- local-first links and notes management
+.SH SYNOPSIS
+.B rott
+[\fIOPTIONS\fR] [\fICOMMAND\fR]
+.SH DESCRIPTION
+.B rott
+is a local-first knowledge management system for saving and organizing links.
+It uses Automerge CRDTs for conflict-free sync across multiple devices.
+.PP
+ROTT works fully offline, with optional sync to a self-hosted server.
+Your identity is your root document ID \- no accounts or passwords needed.
+.SH COMMANDS
+.TP
+.B tui
+Start the interactive terminal user interface.
+.TP
+.B init
+Initialize ROTT for first-time setup. Creates a new identity or joins an existing one.
+See \fBrott-init\fR(1).
+.TP
+.B device
+Device identity management. Show root document ID.
+.TP
+.B link
+Manage links (create, list, show, edit, delete, search).
+See \fBrott-link\fR(1).
+.TP
+.B tags
+List all tags used across your links.
+.TP
+.B config
+Show or set configuration values.
+.TP
+.B status
+Show current status including root document ID and sync state.
+.TP
+.B sync
+Sync with remote server.
+See \fBrott-sync\fR(1).
+.SH OPTIONS
+.TP
+.BR \-c ", " \-\-config " " \fIFILE\fR
+Path to config file. Defaults to ~/.config/rott/config.toml.
+.TP
+.B \-\-json
+Output as JSON for scripting.
+.TP
+.BR \-q ", " \-\-quiet
+Quiet mode \- minimal output.
+.TP
+.BR \-v ", " \-\-verbose
+Verbose output. Use multiple times for more detail (-v info, -vv debug, -vvv trace).
+.TP
+.BR \-h ", " \-\-help
+Print help information.
+.TP
+.BR \-V ", " \-\-version
+Print version information.
+.SH GETTING STARTED
+.SS First-Time Setup
+.PP
+Run \fBrott init\fR to create a new identity:
+.RS
+.nf
+$ rott init
+.fi
+.RE
+.PP
+Save your root document ID somewhere safe! You'll need it to set up additional devices.
+.SS Adding a Device
+.PP
+On a new device, join your existing identity:
+.RS
+.nf
+$ rott init --join YOUR_ROOT_DOCUMENT_ID
+.fi
+.RE
+.SS Setting Up Sync
+.PP
+Configure a sync server URL:
+.RS
+.nf
+$ rott config set sync_url ws://192.168.1.100:3030
+$ rott config set sync_enabled true
+.fi
+.RE
+.SH EXAMPLES
+.PP
+Create a new link:
+.RS
+.nf
+$ rott link create https://example.com --tag rust --tag programming
+.fi
+.RE
+.PP
+List all links:
+.RS
+.nf
+$ rott link list
+.fi
+.RE
+.PP
+List links with a specific tag:
+.RS
+.nf
+$ rott link list --tag rust
+.fi
+.RE
+.PP
+Search links:
+.RS
+.nf
+$ rott link search "rust programming"
+.fi
+.RE
+.PP
+Start the TUI:
+.RS
+.nf
+$ rott tui
+.fi
+.RE
+.PP
+Check status:
+.RS
+.nf
+$ rott status
+.fi
+.RE
+.SH FILES
+.TP
+.I ~/.config/rott/config.toml
+Configuration file.
+.TP
+.I ~/.local/share/rott/
+Data directory containing Automerge documents and SQLite database.
+.SH ENVIRONMENT
+.TP
+.B EDITOR
+Editor used for creating and editing notes.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+General error.
+.SH SEE ALSO
+.BR rott-init (1),
+.BR rott-link (1),
+.BR rott-sync (1)
+.PP
+Full documentation: https://github.com/evcraddock/rott
+.SH AUTHORS
+Erik Craddock <erik@craddock.com>

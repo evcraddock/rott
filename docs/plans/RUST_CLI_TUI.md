@@ -1,17 +1,18 @@
 # Implementation Plan: Rust Core, CLI, and TUI
 
+> **Status: ✅ Complete** (Phases 1-6 implemented, Phase 7 partial)
+
 ## Overview
 
 This plan covers the Rust implementation of ROTT v2, including:
 
 - **rott-core** - Shared library with all business logic
-- **rott-cli** - Command-line interface
-- **rott-tui** - Terminal user interface
+- **rott-cli** - Command-line interface and terminal user interface
 
 ## Goals
 
 1. Build a local-first knowledge management system
-2. Support links and text notes with tagging
+2. Support links with attached notes (annotations)
 3. Work fully offline with optional sync
 4. Provide both CLI and TUI interfaces sharing common logic
 
@@ -32,6 +33,8 @@ This plan covers the Rust implementation of ROTT v2, including:
 
 ## Phase 1: Project Setup and Core Data Model
 
+> **Status: ✅ Complete**
+
 ### Objective
 
 Establish the workspace structure and define the core data model using Automerge.
@@ -39,17 +42,17 @@ Establish the workspace structure and define the core data model using Automerge
 ### Tasks
 
 1. **Create Rust workspace**
-   - Set up Cargo workspace with three crates
+   - Set up Cargo workspace with two crates (rott-core, rott-cli)
    - Configure shared dependencies
    - Set up development tooling (clippy, rustfmt, test configuration)
 
 2. **Define data model**
-   - Link structure (title, source, author, dates, description, tags)
-   - Note structure (title, body, dates, tags)
+   - Link structure (title, url, author, dates, description, tags, notes)
+   - Note structure (title, body, created_at) - notes are children of links
    - Tag as a first-class concept
 
 3. **Automerge document structure**
-   - Design root document schema (contains all user's links and notes)
+   - Design root document schema (contains all user's links)
    - Define how links and notes are represented in Automerge
    - Handle schema versioning for future changes
 
@@ -58,12 +61,12 @@ Establish the workspace structure and define the core data model using Automerge
    - Read link/note by ID
    - Update link/note fields
    - Delete link/note
-   - List all links/notes
+   - List all links
    - Filter by tag
 
 ### Deliverables
 
-- Workspace compiles with three crates
+- Workspace compiles with two crates
 - Core library can create, read, update, delete links and notes
 - Data persists in Automerge documents
 - Unit tests for all CRUD operations
@@ -77,6 +80,8 @@ Establish the workspace structure and define the core data model using Automerge
 ---
 
 ## Phase 2: Local Storage
+
+> **Status: ✅ Complete** (implemented with SQLite projection + Automerge persistence)
 
 ### Objective
 
@@ -125,6 +130,8 @@ Persist Automerge documents to local filesystem.
 
 ## Phase 3: CLI Implementation
 
+> **Status: ✅ Complete**
+
 ### Objective
 
 Build a command-line interface for all core operations.
@@ -137,11 +144,10 @@ Build a command-line interface for all core operations.
    - `rott link show <id>`
    - `rott link edit <id> [--title <title>] [--tag <tag>...]`
    - `rott link delete <id>`
-   - `rott note create <title> [--tag <tag>...]`
-   - `rott note list [--tag <tag>]`
-   - `rott note show <id>`
-   - `rott note edit <id>`
-   - `rott note delete <id>`
+   - `rott note create <link-id> [--title <title>]` (notes attach to links)
+   - `rott note show <link-id> <note-id>`
+   - `rott note edit <link-id> <note-id>`
+   - `rott note delete <link-id> <note-id>`
    - `rott tag list`
    - `rott config show`
    - `rott config set <key> <value>`
@@ -177,6 +183,8 @@ Build a command-line interface for all core operations.
 
 ## Phase 4: TUI Implementation
 
+> **Status: ✅ Complete** (TUI is part of rott-cli crate at `src/tui/`)
+
 ### Objective
 
 Build an interactive terminal interface using ratatui.
@@ -195,8 +203,9 @@ Build an interactive terminal interface using ratatui.
    - Search/filter within lists
 
 3. **CRUD in TUI**
-   - View link/note details
-   - Create new link/note (popup form)
+   - View link details and attached notes
+   - Create new link (popup form)
+   - Add notes to links
    - Edit existing item (popup or external editor)
    - Delete with confirmation
    - Edit tags inline
@@ -225,6 +234,8 @@ Build an interactive terminal interface using ratatui.
 ---
 
 ## Phase 5: Sync Client
+
+> **Status: ✅ Complete** (implemented in `rott-core/src/sync/`)
 
 ### Objective
 
@@ -277,6 +288,8 @@ Connect to sync server and synchronize documents.
 
 ## Phase 6: Device Setup Flow
 
+> **Status: ✅ Complete** (`rott init` and `rott init --join` implemented)
+
 ### Objective
 
 Implement the flow for setting up new devices.
@@ -320,34 +333,36 @@ Implement the flow for setting up new devices.
 
 ## Phase 7: Migration and Polish
 
+> **Status: 🔶 Partial** (Documentation in progress - see task #963)
+
 ### Objective
 
 Migrate from old ROTT format and polish the application.
 
 ### Tasks
 
-1. **Migration from v1**
+1. **Migration from v1** ❌ Not implemented
    - Import markdown files with YAML frontmatter
    - Map old fields to new data model
    - Preserve tags and metadata
    - `rott migrate <directory>` command
 
-2. **Performance optimization**
+2. **Performance optimization** ✅ Complete
    - Profile and optimize hot paths
    - Lazy loading for large document sets
-   - Efficient tag indexing
+   - Efficient tag indexing (SQLite projection)
 
-3. **Error handling improvements**
+3. **Error handling improvements** ✅ Complete
    - User-friendly error messages
    - Suggested remediation steps
    - Logging for debugging
 
-4. **Documentation**
-   - README with installation and usage
-   - Man pages for CLI
-   - Architecture documentation updates
+4. **Documentation** 🔶 In progress (task #963)
+   - README with installation and usage ✅
+   - Man pages for CLI ❌
+   - Architecture documentation updates 🔶
 
-5. **Testing**
+5. **Testing** ✅ Complete
    - Integration tests for CLI
    - TUI testing (if feasible)
    - Sync integration tests (with mock server)
@@ -370,13 +385,11 @@ Migrate from old ROTT format and polish the application.
 
 ### Automerge Document Structure
 
-**Recommended approach:** Single root document per user containing all links and notes.
+**Implemented:** Single root document per user containing all links (notes are embedded in links).
 
 ```
 Root Document {
-  links: Map<ID, Link>,
-  notes: Map<ID, Note>,
-  tags: Set<String>,  // optional: for quick tag listing
+  links: Map<ID, Link>,  // Each Link contains its own notes array
 }
 ```
 
@@ -384,17 +397,20 @@ Rationale:
 - Simple sync (one document to sync)
 - User identity = root document ID
 - Automerge handles concurrent edits within document
+- Notes as children of links simplifies the data model
 
 ### Storage Format
 
-- Automerge binary format for documents
-- TOML for configuration
+- **Automerge binary format** for documents (source of truth)
+- **SQLite** for read-optimized projection (fast queries)
+- **TOML** for configuration
 - Root document ID stored in config file
 
 ### Sync Protocol
 
 - Use automerge-repo compatible WebSocket protocol
 - Connect to standard automerge-repo-sync-server
+- Document ID uses Base58 encoding with checksum (bs58 crate)
 
 ---
 
@@ -410,23 +426,23 @@ Rationale:
 
 ## Estimated Timeline
 
-| Phase | Estimated Duration |
-|-------|-------------------|
-| Phase 1: Setup and Data Model | 1-2 weeks |
-| Phase 2: Local Storage | 1 week |
-| Phase 3: CLI | 1-2 weeks |
-| Phase 4: TUI | 2-3 weeks |
-| Phase 5: Sync Client | 1-2 weeks |
-| Phase 6: Device Setup | 1 week |
-| Phase 7: Migration and Polish | 1-2 weeks |
+| Phase | Estimated Duration | Status |
+|-------|-------------------|--------|
+| Phase 1: Setup and Data Model | 1-2 weeks | ✅ Complete |
+| Phase 2: Local Storage | 1 week | ✅ Complete |
+| Phase 3: CLI | 1-2 weeks | ✅ Complete |
+| Phase 4: TUI | 2-3 weeks | ✅ Complete |
+| Phase 5: Sync Client | 1-2 weeks | ✅ Complete |
+| Phase 6: Device Setup | 1 week | ✅ Complete |
+| Phase 7: Migration and Polish | 1-2 weeks | 🔶 Partial |
 
-**Total: 8-13 weeks**
+**Total: 8-13 weeks** — Phases 1-6 complete, Phase 7 in progress
 
 ---
 
 ## Open Questions to Resolve
 
-1. Automerge document structure - confirm single root doc approach
-2. Root document ID format - raw UUID or encoded?
-3. Sync server URL - how to discover/configure easily?
-4. QR code for device setup - worth the dependency?
+1. ~~Automerge document structure~~ - **Resolved:** Single root doc with embedded notes in links
+2. ~~Root document ID format~~ - **Resolved:** Base58 encoded with checksum
+3. ~~Sync server URL~~ - **Resolved:** Configured via `rott config set sync.url <url>`
+4. QR code for device setup - deferred (manual entry works well enough)

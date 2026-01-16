@@ -4,13 +4,14 @@ This directory contains detailed implementation plans for each component of ROTT
 
 ## Plan Overview
 
-| Plan | Technology | Purpose |
-|------|------------|---------|
-| [Rust CLI/TUI](RUST_CLI_TUI.md) | Rust | Core library + command-line and terminal interfaces |
-| [Sync Server](SYNC_SERVER.md) | Docker/Node.js | Automerge document relay (uses existing software) |
-| [Web Server](WEB_SERVER.md) | Node.js/Go | Authentication and WebSocket relay for web access |
-| [Web App](WEB_APP.md) | TypeScript | Browser-based interface |
-| [iOS App](IOS_APP.md) | Swift | Native iOS application |
+| Plan | Technology | Purpose | Status |
+|------|------------|---------|--------|
+| [Rust CLI/TUI](RUST_CLI_TUI.md) | Rust | Core library + command-line and terminal interfaces | ✅ Complete |
+| [Sync Server](SYNC_SERVER.md) | Docker/Node.js | Automerge document relay (uses existing software) | ✅ Complete |
+| [Linkblog](LINKBLOG.md) | Rust | Public linkblog website | 📋 Planned |
+| [Web Server](WEB_SERVER.md) | Node.js/Go | Authentication and WebSocket relay for web access | 📋 Planned |
+| [Web App](WEB_APP.md) | TypeScript | Browser-based interface | 📋 Planned |
+| [iOS App](IOS_APP.md) | Swift | Native iOS application | 📋 Planned |
 
 ## Architecture Summary
 
@@ -203,34 +204,34 @@ Developer 3:
 
 ```
                     ┌─────────────┐
-                    │ Rust Core   │
-                    │ (Phases 1-4)│
+                    │ rott-core   │
+                    │ (Phases 1-2)│
                     └──────┬──────┘
                            │
-              ┌────────────┴────────────┐
-              │                         │
-              ▼                         ▼
-        ┌──────────┐             ┌──────────┐
-        │   CLI    │             │   TUI    │
-        └──────────┘             └──────────┘
-              │
-              │ needs for sync
-              ▼
-       ┌─────────────┐
-       │ Sync Server │ (existing software, just deploy)
-       └──────┬──────┘
-              │
-    ┌─────────┴─────────┐
-    │                   │
-    ▼                   ▼
-┌──────────┐      ┌──────────┐
-│ iOS App  │      │Web Server│
-└──────────┘      └────┬─────┘
-                       │
-                       ▼
-                  ┌──────────┐
-                  │ Web App  │
-                  └──────────┘
+                           ▼
+                    ┌─────────────┐
+                    │  rott-cli   │
+                    │  (CLI+TUI)  │
+                    │ (Phases 3-6)│
+                    └──────┬──────┘
+                           │
+                           │ needs for sync
+                           ▼
+                    ┌─────────────┐
+                    │ Sync Server │ (existing software, just deploy)
+                    └──────┬──────┘
+                           │
+              ┌────────────┼────────────┐
+              │            │            │
+              ▼            ▼            ▼
+        ┌──────────┐ ┌──────────┐ ┌──────────┐
+        │ Linkblog │ │ iOS App  │ │Web Server│
+        └──────────┘ └──────────┘ └────┬─────┘
+                                       │
+                                       ▼
+                                  ┌──────────┐
+                                  │ Web App  │
+                                  └──────────┘
 ```
 
 ---

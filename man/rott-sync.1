@@ -1,0 +1,163 @@
+.TH ROTT-SYNC 1 "January 2026" "ROTT 2.3.0" "User Commands"
+.SH NAME
+rott-sync \- sync ROTT data with a remote server
+.SH SYNOPSIS
+.B rott sync
+[\fIOPTIONS\fR]
+.SH DESCRIPTION
+The \fBrott sync\fR command synchronizes your local ROTT data with a remote
+sync server. This enables multi-device access to your links and notes.
+.PP
+ROTT uses Automerge CRDTs (Conflict-free Replicated Data Types) for sync,
+which means:
+.IP \(bu 2
+Changes made offline are preserved and merged when you sync
+.IP \(bu 2
+Conflicts are automatically resolved
+.IP \(bu 2
+Data is never lost due to concurrent edits
+.PP
+The sync server is a simple relay (automerge-repo-sync-server) that stores
+and forwards Automerge documents. It has no knowledge of users or
+application logic.
+.SH OPTIONS
+.TP
+.BR \-c ", " \-\-config " " \fIFILE\fR
+Path to config file.
+.TP
+.B \-\-json
+Output as JSON.
+.TP
+.BR \-q ", " \-\-quiet
+Quiet mode.
+.TP
+.BR \-v ", " \-\-verbose
+Verbose output.
+.SH CONFIGURATION
+Before using sync, configure the sync server URL:
+.RS
+.nf
+$ rott config set sync_url ws://192.168.1.100:3030
+$ rott config set sync_enabled true
+.fi
+.RE
+.TP
+.B sync_url
+WebSocket URL of the sync server. Must start with \fBws://\fR or \fBwss://\fR.
+.TP
+.B sync_enabled
+Set to \fBtrue\fR to enable sync. When \fBfalse\fR, ROTT works in local-only mode.
+.SH SYNC BEHAVIOR
+.SS Manual Sync
+Running \fBrott sync\fR performs a one-time sync:
+.IP 1. 4
+Connects to the sync server
+.IP 2. 4
+Sends local changes
+.IP 3. 4
+Receives remote changes
+.IP 4. 4
+Merges and saves
+.IP 5. 4
+Disconnects
+.SS TUI Sync
+The TUI maintains a persistent WebSocket connection for real-time sync.
+Changes sync automatically while the TUI is running.
+.SS Offline Operation
+ROTT works fully offline. When you're offline:
+.IP \(bu 2
+All operations work normally
+.IP \(bu 2
+Changes are saved locally
+.IP \(bu 2
+Run \fBrott sync\fR when back online to sync
+.SH CHECKING SYNC STATUS
+.RS
+.nf
+$ rott sync status
+Sync: enabled
+URL: ws://192.168.1.100:3030
+Status: connected
+.fi
+.RE
+.PP
+Or check overall status:
+.RS
+.nf
+$ rott status
+.fi
+.RE
+.SH EXAMPLES
+.SS Basic Sync
+.RS
+.nf
+$ rott sync
+Syncing...
+Sync complete.
+.fi
+.RE
+.SS Initial Sync After Join
+After joining an existing identity on a new device:
+.RS
+.nf
+$ rott init --join 2DrjgbFkSxXwGBKnVGbLjtPnqTo3r
+$ rott config set sync_url ws://192.168.1.100:3030
+$ rott config set sync_enabled true
+$ rott sync
+Syncing...
+Received 42 links.
+Sync complete.
+.fi
+.RE
+.SS Sync with Verbose Output
+.RS
+.nf
+$ rott sync -v
+Connecting to ws://192.168.1.100:3030...
+Sending sync message...
+Received sync message...
+Applied 3 changes.
+Sync complete.
+.fi
+.RE
+.SH SYNC SERVER SETUP
+The sync server (automerge-repo-sync-server) is a separate component.
+.PP
+Quick start with Docker:
+.RS
+.nf
+$ docker run -d \\
+    --name rott-sync \\
+    -p 3030:3030 \\
+    -v rott-data:/data \\
+    ghcr.io/automerge/automerge-repo-sync-server:main
+.fi
+.RE
+.PP
+See \fIhttps://github.com/evcraddock/rott/blob/main/docs/SYNC_SERVER_SETUP.md\fR
+for detailed setup instructions.
+.SH TROUBLESHOOTING
+.TP
+.B "Connection refused"
+Sync server is not running or unreachable. Check the server and network.
+.TP
+.B "Sync URL not configured"
+Run \fBrott config set sync_url ws://HOST:PORT\fR.
+.TP
+.B "Sync disabled"
+Run \fBrott config set sync_enabled true\fR.
+.TP
+.B "Pending sync"
+After joining, run \fBrott sync\fR to complete initial sync.
+.SH EXIT STATUS
+.TP
+.B 0
+Sync completed successfully.
+.TP
+.B 1
+Sync failed (connection error, configuration error, etc.).
+.SH SEE ALSO
+.BR rott (1),
+.BR rott-init (1)
+.PP
+Sync server setup: \fIhttps://github.com/evcraddock/rott/blob/main/docs/SYNC_SERVER_SETUP.md\fR

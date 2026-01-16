@@ -1,0 +1,197 @@
+.TH ROTT-LINK 1 "January 2026" "ROTT 2.3.0" "User Commands"
+.SH NAME
+rott-link \- manage links in ROTT
+.SH SYNOPSIS
+.B rott link
+\fICOMMAND\fR [\fIOPTIONS\fR]
+.SH DESCRIPTION
+The \fBrott link\fR command manages links in your ROTT collection.
+Links can have titles, descriptions, authors, tags, and attached notes.
+.SH COMMANDS
+.SS rott link create
+Create a new link.
+.PP
+.B rott link create
+\fIURL\fR [\fIOPTIONS\fR]
+.TP
+.BR \-t ", " \-\-title " " \fITITLE\fR
+Set the link title. If not provided, ROTT attempts to fetch it from the URL.
+.TP
+.BR \-d ", " \-\-description " " \fIDESCRIPTION\fR
+Set a description for the link.
+.TP
+.BR \-a ", " \-\-author " " \fIAUTHOR\fR
+Set the author(s). Can be specified multiple times.
+.TP
+.BR \-\-tag " " \fITAG\fR
+Add a tag. Can be specified multiple times.
+.TP
+.B \-\-no\-fetch
+Don't fetch metadata from the URL.
+.PP
+.B Example:
+.RS
+.nf
+$ rott link create https://example.com --tag rust --tag tutorial
+.fi
+.RE
+.SS rott link list
+List all links, optionally filtered by tag.
+.PP
+.B rott link list
+[\fIOPTIONS\fR]
+.TP
+.BR \-\-tag " " \fITAG\fR
+Filter by tag. Can be specified multiple times (OR logic).
+.PP
+.B Example:
+.RS
+.nf
+$ rott link list --tag rust
+.fi
+.RE
+.SS rott link show
+Show details of a specific link, including attached notes.
+.PP
+.B rott link show
+\fIID\fR
+.PP
+.B Example:
+.RS
+.nf
+$ rott link show abc123
+.fi
+.RE
+.SS rott link edit
+Edit an existing link.
+.PP
+.B rott link edit
+\fIID\fR [\fIOPTIONS\fR]
+.TP
+.BR \-t ", " \-\-title " " \fITITLE\fR
+Set a new title.
+.TP
+.BR \-d ", " \-\-description " " \fIDESCRIPTION\fR
+Set a new description.
+.TP
+.BR \-\-tag " " \fITAG\fR
+Replace all tags with the specified tags.
+.TP
+.BR \-\-add\-tag " " \fITAG\fR
+Add a tag without removing existing ones.
+.TP
+.BR \-\-remove\-tag " " \fITAG\fR
+Remove a specific tag.
+.PP
+.B Example:
+.RS
+.nf
+$ rott link edit abc123 --add-tag favorite
+.fi
+.RE
+.SS rott link delete
+Delete a link.
+.PP
+.B rott link delete
+\fIID\fR [\fIOPTIONS\fR]
+.TP
+.BR \-y ", " \-\-yes
+Skip confirmation prompt.
+.PP
+.B Example:
+.RS
+.nf
+$ rott link delete abc123
+.fi
+.RE
+.SS rott link search
+Search links by text.
+.PP
+.B rott link search
+\fIQUERY\fR
+.PP
+Searches titles, descriptions, and URLs.
+.PP
+.B Example:
+.RS
+.nf
+$ rott link search "rust async"
+.fi
+.RE
+.SS rott link note
+Manage notes attached to a link. Notes are annotations or comments on links.
+.PP
+.B rott link note create
+\fILINK_ID\fR [\fIOPTIONS\fR]
+.RS
+Create a new note on a link. Opens $EDITOR if no body provided.
+.TP
+.BR \-t ", " \-\-title " " \fITITLE\fR
+Set note title.
+.TP
+.BR \-b ", " \-\-body " " \fIBODY\fR
+Set note body directly.
+.RE
+.PP
+.B rott link note list
+\fILINK_ID\fR
+.RS
+List all notes on a link.
+.RE
+.PP
+.B rott link note delete
+\fILINK_ID\fR \fINOTE_ID\fR
+.RS
+Delete a note from a link.
+.RE
+.PP
+.B Example:
+.RS
+.nf
+$ rott link note create abc123 --body "Great article on async Rust"
+.fi
+.RE
+.SH OPTIONS
+Global options that apply to all subcommands:
+.TP
+.BR \-c ", " \-\-config " " \fIFILE\fR
+Path to config file.
+.TP
+.B \-\-json
+Output as JSON.
+.TP
+.BR \-q ", " \-\-quiet
+Quiet mode.
+.TP
+.BR \-v ", " \-\-verbose
+Verbose output.
+.SH LINK IDENTIFIERS
+Links are identified by a short ID (UUID prefix). You can use:
+.IP \(bu 2
+Full UUID: \fI550e8400-e29b-41d4-a716-446655440000\fR
+.IP \(bu 2
+Short prefix: \fI550e84\fR (minimum 6 characters)
+.PP
+The short prefix must be unique among your links.
+.SH EXAMPLES
+.PP
+Create a link and add a note:
+.RS
+.nf
+$ rott link create https://doc.rust-lang.org --tag rust --tag docs
+Created link: abc123
+
+$ rott link note create abc123 --body "Official Rust docs"
+.fi
+.RE
+.PP
+List all rust-tagged links as JSON:
+.RS
+.nf
+$ rott link list --tag rust --json
+.fi
+.RE
+.SH SEE ALSO
+.BR rott (1),
+.BR rott-init (1),
+.BR rott-sync (1)
