@@ -71,12 +71,37 @@ pub fn show(store: &Store, id: String, output: &Output) -> Result<()> {
 }
 
 /// Edit a link
-pub fn edit(store: &mut Store, id: String, output: &Output) -> Result<()> {
+pub fn edit(
+    store: &mut Store,
+    id: String,
+    add_tags: Vec<String>,
+    remove_tags: Vec<String>,
+    output: &Output,
+) -> Result<()> {
     let uuid = parse_link_id(&id, store)?;
 
     let mut link = store
         .get_link(uuid)?
         .ok_or_else(|| anyhow::anyhow!("Link not found: {}", id))?;
+
+    // If tag flags provided, do non-interactive editing
+    if !add_tags.is_empty() || !remove_tags.is_empty() {
+        for tag in add_tags {
+            link.add_tag(tag);
+        }
+        for tag in remove_tags {
+            link.remove_tag(&tag);
+        }
+
+        store.update_link(&link).context("Failed to update link")?;
+
+        output.success("Link updated");
+        if !output.is_quiet() {
+            output.print_link(&link);
+        }
+
+        return Ok(());
+    }
 
     // Interactive editing
     println!("Editing link: {}", link.id);
