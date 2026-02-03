@@ -112,6 +112,12 @@ enum LinkCommands {
     Edit {
         /// Link ID (full UUID or prefix)
         id: String,
+        /// Add a tag (can be repeated)
+        #[arg(long = "add-tag")]
+        add_tags: Vec<String>,
+        /// Remove a tag (can be repeated)
+        #[arg(long = "remove-tag")]
+        remove_tags: Vec<String>,
     },
     /// Delete a link
     #[command(alias = "rm")]
@@ -297,7 +303,11 @@ async fn handle_link_command(
         LinkCommands::Create { url, tag } => commands::link::create(store, url, tag, output).await,
         LinkCommands::List { tag } => commands::link::list(store, tag, output),
         LinkCommands::Show { id } => commands::link::show(store, id, output),
-        LinkCommands::Edit { id } => commands::link::edit(store, id, output),
+        LinkCommands::Edit {
+            id,
+            add_tags,
+            remove_tags,
+        } => commands::link::edit(store, id, add_tags, remove_tags, output),
         LinkCommands::Delete { id } => commands::link::delete(store, id, output),
         LinkCommands::Search { query } => commands::link::search(store, query, output),
         LinkCommands::Note { command } => handle_note_command(command, store, output),
