@@ -64,10 +64,6 @@ pub enum StorageError {
     #[error("Invalid document format in '{path}': {details}")]
     InvalidFormat { path: PathBuf, details: String },
 
-    /// SQLite database error
-    #[error("Database error: {0}")]
-    Database(#[from] rusqlite::Error),
-
     /// Automerge error
     #[error("Automerge error: {0}")]
     Automerge(String),

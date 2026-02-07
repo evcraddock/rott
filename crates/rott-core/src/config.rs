@@ -18,7 +18,7 @@ const ENV_PREFIX: &str = "ROTT";
 /// Application configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    /// Directory for data storage (Automerge doc, SQLite db)
+    /// Directory for data storage (Automerge document)
     #[serde(default = "default_data_dir")]
     pub data_dir: PathBuf,
 
@@ -169,11 +169,6 @@ impl Config {
         self.data_dir.join("document.automerge")
     }
 
-    /// Get the path to the SQLite database
-    pub fn sqlite_path(&self) -> PathBuf {
-        self.data_dir.join("rott.db")
-    }
-
     /// Get the path to the root document ID file
     pub fn root_doc_id_path(&self) -> PathBuf {
         self.data_dir.join("root_doc_id")
@@ -244,9 +239,6 @@ mod tests {
 
         let am_path = config.automerge_path();
         assert!(am_path.ends_with("document.automerge"));
-
-        let db_path = config.sqlite_path();
-        assert!(db_path.ends_with("rott.db"));
 
         let id_path = config.root_doc_id_path();
         assert!(id_path.ends_with("root_doc_id"));

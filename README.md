@@ -201,14 +201,14 @@ Environment variables override config file values:
 ROTT uses a local-first architecture:
 
 - **Automerge document**: Primary data store using CRDTs for conflict-free sync
-- **SQLite database**: Projection layer for fast queries and full-text search
+- All queries are served directly from the in-memory Automerge document
 
 Data is stored in the data directory (default `~/.local/share/rott`):
 
 ```
 ~/.local/share/rott/
 ├── document.automerge   # Automerge document
-├── links.db             # SQLite projection
+├── root_doc_id          # Document identity
 └── sync_state.json      # Sync state
 ```
 

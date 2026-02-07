@@ -219,9 +219,9 @@ async fn run_app<B: Backend>(
                             app.sync_status = sync::status_to_indicator(status);
                         }
                         SyncTaskEvent::DocumentUpdated => {
-                            // Remote changes received - rebuild projection and refresh UI
-                            if let Err(e) = store.rebuild_projection() {
-                                app.set_error(format!("Failed to rebuild after sync: {}", e));
+                            // Remote changes received - save to disk and refresh UI
+                            if let Err(e) = store.save() {
+                                app.set_error(format!("Failed to save after sync: {}", e));
                             } else if let Err(e) = app.refresh(store) {
                                 app.set_error(format!("Failed to refresh after sync: {}", e));
                             } else {

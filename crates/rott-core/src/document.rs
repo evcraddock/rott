@@ -258,6 +258,61 @@ impl RottDocument {
             .collect())
     }
 
+    /// Get a link by URL (for duplicate detection)
+    ///
+    /// Performs a linear scan with basic URL normalization (trailing slash removal,
+    /// domain lowercasing). Returns the first match found.
+    pub fn get_link_by_url(&self, url: &str) -> Result<Option<Link>, DocumentError> {
+        let normalized = normalize_url(url);
+        let all_links = self.get_all_links()?;
+        Ok(all_links.into_iter().find(|link| {
+            let link_normalized = normalize_url(&link.url);
+            link_normalized == normalized || link.url == url
+        }))
+    }
+
+    /// Search links using case-insensitive substring matching
+    ///
+    /// Searches across title, URL, and description fields.
+    pub fn search_links(&self, query: &str) -> Result<Vec<Link>, DocumentError> {
+        let query_lower = query.to_lowercase();
+        let all_links = self.get_all_links()?;
+        Ok(all_links
+            .into_iter()
+            .filter(|link| {
+                link.title.to_lowercase().contains(&query_lower)
+                    || link.url.to_lowercase().contains(&query_lower)
+                    || link
+                        .description
+                        .as_ref()
+                        .is_some_and(|d| d.to_lowercase().contains(&query_lower))
+            })
+            .collect())
+    }
+
+    /// Get tags with usage counts
+    pub fn get_tags_with_counts(&self) -> Result<Vec<(String, i64)>, DocumentError> {
+        let mut counts: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+        for link in self.get_all_links()? {
+            for tag in link.tags {
+                *counts.entry(tag).or_insert(0) += 1;
+            }
+        }
+        let mut result: Vec<_> = counts.into_iter().collect();
+        result.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        Ok(result)
+    }
+
+    /// Get count of all links
+    pub fn link_count(&self) -> Result<usize, DocumentError> {
+        Ok(self.get_all_links()?.len())
+    }
+
+    /// Get count of all notes across all links
+    pub fn note_count(&self) -> Result<usize, DocumentError> {
+        Ok(self.get_all_links()?.iter().map(|l| l.notes.len()).sum())
+    }
+
     // ==================== Notes (as children of links) ====================
 
     /// Add a note to a link
@@ -541,6 +596,32 @@ impl Default for RottDocument {
     }
 }
 
+/// Normalize a URL for duplicate detection
+///
+/// - Removes trailing slashes (except for root path)
+/// - Lowercases the domain portion
+fn normalize_url(url: &str) -> String {
+    let mut normalized = url.trim().to_string();
+
+    // Remove trailing slash (but not for root path)
+    if normalized.ends_with('/') && normalized.matches('/').count() > 3 {
+        normalized.pop();
+    }
+
+    // Try to lowercase just the domain part
+    if let Some(idx) = normalized.find("://") {
+        let (scheme, rest) = normalized.split_at(idx + 3);
+        if let Some(path_idx) = rest.find('/') {
+            let (domain, path) = rest.split_at(path_idx);
+            normalized = format!("{}{}{}", scheme, domain.to_lowercase(), path);
+        } else {
+            normalized = format!("{}{}", scheme, rest.to_lowercase());
+        }
+    }
+
+    normalized
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -762,5 +843,156 @@ mod tests {
 
         let links = doc1.get_all_links().unwrap();
         assert_eq!(links.len(), 2);
+    }
+
+    #[test]
+    fn test_get_link_by_url_found() {
+        let mut doc = RottDocument::new();
+        let mut link = Link::new("https://rust-lang.org");
+        link.set_title("Rust");
+        doc.add_link(&link).unwrap();
+
+        let found = doc.get_link_by_url("https://rust-lang.org").unwrap();
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().title, "Rust");
+    }
+
+    #[test]
+    fn test_get_link_by_url_not_found() {
+        let mut doc = RottDocument::new();
+        doc.add_link(&Link::new("https://rust-lang.org")).unwrap();
+
+        let found = doc.get_link_by_url("https://not-exists.com").unwrap();
+        assert!(found.is_none());
+    }
+
+    #[test]
+    fn test_get_link_by_url_normalized() {
+        let mut doc = RottDocument::new();
+        doc.add_link(&Link::new("https://Example.COM/path/"))
+            .unwrap();
+
+        // Should match with different casing on domain
+        let found = doc.get_link_by_url("https://example.com/path/").unwrap();
+        assert!(found.is_some());
+    }
+
+    #[test]
+    fn test_search_links_by_title() {
+        let mut doc = RottDocument::new();
+        let mut link = Link::new("https://rust-lang.org");
+        link.set_title("Rust Programming Language");
+        doc.add_link(&link).unwrap();
+
+        let results = doc.search_links("Programming").unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "Rust Programming Language");
+    }
+
+    #[test]
+    fn test_search_links_by_description() {
+        let mut doc = RottDocument::new();
+        let mut link = Link::new("https://example.com");
+        link.set_title("Example");
+        link.set_description(Some("An example website for testing".to_string()));
+        doc.add_link(&link).unwrap();
+
+        let results = doc.search_links("testing").unwrap();
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn test_search_links_by_url() {
+        let mut doc = RottDocument::new();
+        doc.add_link(&Link::new("https://rust-lang.org")).unwrap();
+        doc.add_link(&Link::new("https://python.org")).unwrap();
+
+        let results = doc.search_links("rust").unwrap();
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn test_search_links_no_results() {
+        let mut doc = RottDocument::new();
+        doc.add_link(&Link::new("https://example.com")).unwrap();
+
+        let results = doc.search_links("nonexistent").unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_search_links_case_insensitive() {
+        let mut doc = RottDocument::new();
+        let mut link = Link::new("https://example.com");
+        link.set_title("Rust Programming");
+        doc.add_link(&link).unwrap();
+
+        let results = doc.search_links("rust programming").unwrap();
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn test_get_tags_with_counts() {
+        let mut doc = RottDocument::new();
+
+        let mut link1 = Link::new("https://one.com");
+        link1.add_tag("rust");
+        link1.add_tag("web");
+        doc.add_link(&link1).unwrap();
+
+        let mut link2 = Link::new("https://two.com");
+        link2.add_tag("rust");
+        doc.add_link(&link2).unwrap();
+
+        let counts = doc.get_tags_with_counts().unwrap();
+        let rust_count = counts.iter().find(|(name, _)| name == "rust").unwrap();
+        assert_eq!(rust_count.1, 2);
+
+        let web_count = counts.iter().find(|(name, _)| name == "web").unwrap();
+        assert_eq!(web_count.1, 1);
+
+        // rust should come first (higher count)
+        assert_eq!(counts[0].0, "rust");
+    }
+
+    #[test]
+    fn test_link_count() {
+        let mut doc = RottDocument::new();
+        assert_eq!(doc.link_count().unwrap(), 0);
+
+        doc.add_link(&Link::new("https://one.com")).unwrap();
+        doc.add_link(&Link::new("https://two.com")).unwrap();
+        assert_eq!(doc.link_count().unwrap(), 2);
+    }
+
+    #[test]
+    fn test_note_count() {
+        let mut doc = RottDocument::new();
+        let link = Link::new("https://example.com");
+        let link_id = link.id;
+        doc.add_link(&link).unwrap();
+
+        assert_eq!(doc.note_count().unwrap(), 0);
+
+        doc.add_note_to_link(link_id, &Note::new("Note 1")).unwrap();
+        doc.add_note_to_link(link_id, &Note::new("Note 2")).unwrap();
+        assert_eq!(doc.note_count().unwrap(), 2);
+    }
+
+    #[test]
+    fn test_normalize_url() {
+        assert_eq!(
+            super::normalize_url("https://Example.COM/path"),
+            "https://example.com/path"
+        );
+        assert_eq!(
+            super::normalize_url("https://example.com/Path/Case"),
+            "https://example.com/Path/Case"
+        );
+        // Trailing slash removed when there's a path
+        assert_eq!(
+            super::normalize_url("https://example.com/path/"),
+            "https://example.com/path"
+        );
     }
 }

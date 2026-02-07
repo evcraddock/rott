@@ -167,14 +167,10 @@ impl AutomergePersistence {
 
     /// Delete all stored data
     ///
-    /// Removes the Automerge document, root doc ID, and SQLite database.
+    /// Removes the Automerge document and root doc ID.
     /// Use with caution!
     pub fn delete_all(&self) -> Result<()> {
-        let paths = [
-            self.config.automerge_path(),
-            self.config.root_doc_id_path(),
-            self.config.sqlite_path(),
-        ];
+        let paths = [self.config.automerge_path(), self.config.root_doc_id_path()];
 
         for path in paths {
             if path.exists() {
@@ -293,13 +289,10 @@ impl AutomergePersistence {
     /// Get storage statistics
     pub fn storage_stats(&self) -> StorageStats {
         let doc_path = self.config.automerge_path();
-        let db_path = self.config.sqlite_path();
 
         StorageStats {
             document_size: fs::metadata(&doc_path).map(|m| m.len()).ok(),
-            database_size: fs::metadata(&db_path).map(|m| m.len()).ok(),
             document_exists: doc_path.exists(),
-            database_exists: db_path.exists(),
         }
     }
 }
@@ -309,18 +302,14 @@ impl AutomergePersistence {
 pub struct StorageStats {
     /// Size of the Automerge document in bytes
     pub document_size: Option<u64>,
-    /// Size of the SQLite database in bytes
-    pub database_size: Option<u64>,
     /// Whether the document file exists
     pub document_exists: bool,
-    /// Whether the database file exists
-    pub database_exists: bool,
 }
 
 impl StorageStats {
     /// Total storage size in bytes
     pub fn total_size(&self) -> u64 {
-        self.document_size.unwrap_or(0) + self.database_size.unwrap_or(0)
+        self.document_size.unwrap_or(0)
     }
 
     /// Format total size as human-readable string
@@ -673,7 +662,6 @@ mod tests {
         // Initially nothing exists
         let stats = persistence.storage_stats();
         assert!(!stats.document_exists);
-        assert!(!stats.database_exists);
         assert_eq!(stats.total_size(), 0);
 
         // Create document
@@ -688,18 +676,14 @@ mod tests {
     #[test]
     fn test_storage_stats_human_readable() {
         let stats = StorageStats {
-            document_size: Some(1024),
-            database_size: Some(1024),
+            document_size: Some(2048),
             document_exists: true,
-            database_exists: true,
         };
         assert_eq!(stats.total_size_human(), "2.0 KB");
 
         let stats = StorageStats {
-            document_size: Some(1024 * 1024),
-            database_size: Some(512 * 1024),
+            document_size: Some(1024 * 1024 + 512 * 1024),
             document_exists: true,
-            database_exists: true,
         };
         assert_eq!(stats.total_size_human(), "1.5 MB");
     }

@@ -1,14 +1,12 @@
 //! Storage layer
 //!
-//! Handles Automerge document persistence and SQLite projection.
+//! Handles Automerge document persistence.
 //!
 //! ## Architecture
 //!
 //! - **Automerge**: Source of truth, stored as binary file
-//! - **SQLite**: Read-optimized projection for fast queries
 //!
-//! When the Automerge document changes, the SQLite database is updated
-//! to reflect the new state.
+//! All queries are served directly from the in-memory Automerge document.
 //!
 //! ## Error Handling
 //!
@@ -20,10 +18,6 @@
 
 pub mod error;
 pub mod persistence;
-pub mod projection;
-pub mod schema;
 
 pub use error::{StorageError, StorageResult};
 pub use persistence::{AutomergePersistence, StorageStats};
-pub use projection::SqliteProjection;
-pub use schema::{init_schema, needs_init, SCHEMA_VERSION};

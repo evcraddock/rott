@@ -153,7 +153,7 @@ rott/
 │   │   ├── identity.rs      # User identity management
 │   │   ├── models.rs        # Link, Note data structures
 │   │   ├── store.rs         # Unified storage interface
-│   │   ├── storage/         # Automerge persistence + SQLite projection
+│   │   ├── storage/         # Automerge persistence
 │   │   └── sync/            # Sync server client
 │   │
 │   └── rott-cli/            # CLI and TUI binary
@@ -365,9 +365,9 @@ Each platform stores Automerge documents locally:
 
 | Platform | Storage Mechanism |
 |----------|-------------------|
-| CLI/TUI | Filesystem or SQLite |
+| CLI/TUI | Filesystem (Automerge binary) |
 | Web | IndexedDB |
-| iOS | Local SQLite or filesystem |
+| iOS | Filesystem or local database |
 
 ### Data Location
 

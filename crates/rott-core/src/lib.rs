@@ -6,7 +6,8 @@
 //! # Architecture
 //!
 //! - **Automerge**: Source of truth for data, enables CRDT-based sync
-//! - **SQLite**: Read-optimized projection for fast queries
+//!
+//! All queries are served directly from the in-memory Automerge document.
 //!
 //! # Quick Start
 //!
@@ -28,7 +29,7 @@
 //! - `models`: Data structures for links, notes, and tags
 //! - `document`: Automerge document handling
 //! - `document_id`: Document ID compatible with automerge-repo
-//! - `storage`: Automerge persistence and SQLite projection
+//! - `storage`: Automerge persistence
 //! - `config`: Application configuration
 
 pub mod config;
@@ -45,5 +46,5 @@ pub use document::{DocumentError, RottDocument};
 pub use document_id::{DocumentId, DocumentIdError};
 pub use identity::{Identity, InitResult};
 pub use models::{Link, Note, Tag};
-pub use storage::{AutomergePersistence, SqliteProjection, StorageError, StorageStats};
+pub use storage::{AutomergePersistence, StorageError, StorageStats};
 pub use store::Store;

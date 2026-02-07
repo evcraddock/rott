@@ -22,9 +22,7 @@ pub fn show(store: &Store, output: &Output) -> Result<()> {
                     "sync_url": config.sync_url,
                     "storage": {
                         "document_exists": stats.document_exists,
-                        "database_exists": stats.database_exists,
                         "document_size": stats.document_size,
-                        "database_size": stats.database_size,
                         "total_size": stats.total_size()
                     },
                     "counts": {
