@@ -166,7 +166,7 @@ Then create a pull request on GitHub.
 ### Architecture Principles
 
 - **Core contains all logic** - CLI/TUI should be thin wrappers
-- **Automerge is the source of truth** - SQLite is a read projection
+- **Automerge is the source of truth** - All queries are served from the in-memory document
 - **Fail fast with clear errors** - Use descriptive error messages
 - **Test your changes** - Add tests for new functionality
 
@@ -288,8 +288,6 @@ For detailed architecture, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ```
 User Action → CLI/TUI → Store → Automerge Document
                               ↓
-                        SQLite Projection (for queries)
-                              ↓
                         Sync Client → Sync Server
 ```
 
@@ -297,7 +295,7 @@ User Action → CLI/TUI → Store → Automerge Document
 
 1. **Local-first**: All operations work offline
 2. **CRDT-based**: Automerge handles conflict resolution
-3. **Projection**: SQLite mirrors Automerge for fast queries
+3. **In-memory queries**: All reads served directly from Automerge document
 4. **Thin CLI**: Business logic lives in rott-core
 
 ---
