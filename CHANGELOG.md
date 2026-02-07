@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.1] - 2026-02-07
+
+### Fixed
+- Always fetch metadata regardless of `-q` flag — quiet mode should only suppress output, not skip metadata fetching
+
 ## [2.5.0] - 2026-02-07
 
 ### Changed
