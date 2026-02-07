@@ -1805,7 +1805,7 @@ dependencies = [
 
 [[package]]
 name = "rott-cli"
-version = "2.4.0"
+version = "2.5.0"
 dependencies = [
  "anyhow",
  "atty",
@@ -1832,7 +1832,7 @@ dependencies = [
 
 [[package]]
 name = "rott-core"
-version = "2.4.0"
+version = "2.5.0"
 dependencies = [
  "anyhow",
  "automerge",

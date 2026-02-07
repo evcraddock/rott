@@ -7,7 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-02-07
+
+### Changed
+- **Removed SQLite projection layer** — all queries now served directly from the in-memory Automerge document, dramatically improving startup and write performance
+- **Skip metadata fetch in quiet mode** — `rott link create -q` no longer makes HTTP requests, enabling near-instant link creation (e.g., from newsboat bookmarks)
+- Search uses in-memory substring matching instead of SQLite FTS5
+- Simplified save path: no more full database rebuild on every operation
+
+### Removed
+- `rusqlite` dependency (including bundled C SQLite compilation)
+- `SqliteProjection`, `schema.rs`, and `projection.rs`
+- `sqlite_path()` from configuration
+- SQLite references from documentation
+
 ### Added
+- `get_link_by_url()` on `RottDocument` for duplicate detection
+- `search_links()` on `RottDocument` for in-memory search
+- `get_tags_with_counts()`, `link_count()`, `note_count()` on `RottDocument`
 - Sync server setup guide (`docs/SYNC_SERVER_SETUP.md`)
 - Root document ID explainer (`docs/IDENTITY.md`)
 - Troubleshooting guide (`docs/TROUBLESHOOTING.md`)
