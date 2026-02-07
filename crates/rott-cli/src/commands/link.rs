@@ -16,20 +16,21 @@ pub async fn create(
     tags: Vec<String>,
     output: &Output,
 ) -> Result<()> {
-    // Fetch metadata from URL
-    let metadata = fetch_metadata(&url).await;
-
     let mut link = Link::new(&url);
 
-    // Apply fetched metadata
-    if let Some(title) = metadata.title {
-        link.set_title(title);
-    }
-    if let Some(desc) = metadata.description {
-        link.set_description(Some(desc));
-    }
-    if !metadata.author.is_empty() {
-        link.set_author(metadata.author);
+    // Skip metadata fetch in quiet mode for fast creation
+    if !output.is_quiet() {
+        let metadata = fetch_metadata(&url).await;
+
+        if let Some(title) = metadata.title {
+            link.set_title(title);
+        }
+        if let Some(desc) = metadata.description {
+            link.set_description(Some(desc));
+        }
+        if !metadata.author.is_empty() {
+            link.set_author(metadata.author);
+        }
     }
 
     // Add tags

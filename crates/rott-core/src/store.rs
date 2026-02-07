@@ -1,8 +1,7 @@
 //! Unified storage interface
 //!
-//! The `Store` manages the root document and coordinates between:
-//! - Automerge (source of truth)
-//! - SQLite (read-optimized queries)
+//! The `Store` manages the root Automerge document and provides
+//! all query and mutation operations.
 //!
 //! ## Root Document
 //!
@@ -22,7 +21,7 @@
 //! // Add data
 //! store.add_link(&link)?;
 //!
-//! // Query data (uses SQLite)
+//! // Query data
 //! let links = store.get_all_links()?;
 //! ```
 
@@ -37,19 +36,17 @@ use crate::config::Config;
 use crate::document::RottDocument;
 use crate::document_id::DocumentId;
 use crate::models::{Link, Note};
-use crate::storage::{AutomergePersistence, SqliteProjection, StorageStats};
+use crate::storage::{AutomergePersistence, StorageStats};
 use crate::sync::{SyncClient, SyncState};
 
 /// Unified storage interface for ROTT
 ///
-/// Manages the root Automerge document and keeps SQLite in sync.
+/// Manages the root Automerge document.
 pub struct Store {
     /// The root Automerge document (shared for sync)
     doc: Arc<Mutex<RottDocument>>,
     /// Automerge persistence handler
     persistence: AutomergePersistence,
-    /// SQLite projection for queries
-    projection: SqliteProjection,
     /// Configuration
     config: Config,
 }
@@ -60,11 +57,9 @@ impl Store {
     /// On first run:
     /// - Creates a new Automerge document
     /// - Saves it to disk
-    /// - Initializes SQLite
     ///
     /// On subsequent runs:
     /// - Loads existing document
-    /// - Rebuilds SQLite projection (ensures consistency)
     pub fn open() -> Result<Self> {
         let config = Config::load().context("Failed to load configuration")?;
         Self::open_with_config(config)
@@ -97,9 +92,6 @@ impl Store {
             );
         }
 
-        let mut projection =
-            SqliteProjection::open(&config).context("Failed to open SQLite database")?;
-
         // Load or create the root document (with recovery for corruption)
         let (doc, was_recovered) = persistence
             .load_or_create_with_recovery()
@@ -113,17 +105,11 @@ impl Store {
             );
         }
 
-        // Rebuild SQLite projection to ensure consistency
-        projection
-            .project_full(&doc)
-            .context("Failed to project document to SQLite")?;
-
         debug!("Store opened successfully, root_id={}", doc.id());
 
         Ok(Self {
             doc: Arc::new(Mutex::new(doc)),
             persistence,
-            projection,
             config,
         })
     }
@@ -193,7 +179,6 @@ impl Store {
         }
 
         // Verify we received a valid document with the expected ID
-        // The document should now contain the root_doc_id field from the server
         let received_bytes = doc.save();
         let loaded_doc = RottDocument::load(&received_bytes)
             .context("Received invalid document from sync server")?;
@@ -238,7 +223,7 @@ impl Store {
 
     /// Check if this is a new store (just created)
     pub fn is_new(&self) -> bool {
-        self.projection.link_count().unwrap_or(0) == 0
+        tokio::task::block_in_place(|| self.doc.blocking_lock().link_count().unwrap_or(0) == 0)
     }
 
     // ==================== Link Operations ====================
@@ -262,7 +247,7 @@ impl Store {
                 .add_link(link)
                 .context("Failed to add link to document")
         })?;
-        self.save_and_project()
+        self.save()
     }
 
     /// Update an existing link
@@ -273,7 +258,7 @@ impl Store {
                 .update_link(link)
                 .context("Failed to update link in document")
         })?;
-        self.save_and_project()
+        self.save()
     }
 
     /// Delete a link
@@ -284,42 +269,57 @@ impl Store {
                 .delete_link(id)
                 .context("Failed to delete link from document")
         })?;
-        self.save_and_project()
+        self.save()
     }
 
     /// Get a link by ID (includes notes)
     pub fn get_link(&self, id: Uuid) -> Result<Option<Link>> {
-        self.projection
-            .get_link(&id.to_string())
-            .context("Failed to get link")
+        tokio::task::block_in_place(|| {
+            self.doc
+                .blocking_lock()
+                .get_link(id)
+                .context("Failed to get link")
+        })
     }
 
     /// Get a link by URL (for duplicate detection)
     pub fn get_link_by_url(&self, url: &str) -> Result<Option<Link>> {
-        self.projection
-            .get_link_by_url(url)
-            .context("Failed to get link by URL")
+        tokio::task::block_in_place(|| {
+            self.doc
+                .blocking_lock()
+                .get_link_by_url(url)
+                .context("Failed to get link by URL")
+        })
     }
 
     /// Get all links
     pub fn get_all_links(&self) -> Result<Vec<Link>> {
-        self.projection
-            .get_all_links()
-            .context("Failed to get links")
+        tokio::task::block_in_place(|| {
+            self.doc
+                .blocking_lock()
+                .get_all_links()
+                .context("Failed to get links")
+        })
     }
 
     /// Get links by tag
     pub fn get_links_by_tag(&self, tag: &str) -> Result<Vec<Link>> {
-        self.projection
-            .get_links_by_tag(tag)
-            .context("Failed to get links by tag")
+        tokio::task::block_in_place(|| {
+            self.doc
+                .blocking_lock()
+                .get_links_by_tag(tag)
+                .context("Failed to get links by tag")
+        })
     }
 
-    /// Search links using full-text search
+    /// Search links using substring matching
     pub fn search_links(&self, query: &str) -> Result<Vec<Link>> {
-        self.projection
-            .search_links(query)
-            .context("Failed to search links")
+        tokio::task::block_in_place(|| {
+            self.doc
+                .blocking_lock()
+                .search_links(query)
+                .context("Failed to search links")
+        })
     }
 
     // ==================== Note Operations (via Link) ====================
@@ -332,7 +332,7 @@ impl Store {
                 .add_note_to_link(link_id, note)
                 .context("Failed to add note to link")
         })?;
-        self.save_and_project()
+        self.save()
     }
 
     /// Remove a note from a link
@@ -343,46 +343,62 @@ impl Store {
                 .remove_note_from_link(link_id, note_id)
                 .context("Failed to remove note from link")
         })?;
-        self.save_and_project()
+        self.save()
     }
 
     // ==================== Tag Operations ====================
 
     /// Get all unique tags
     pub fn get_all_tags(&self) -> Result<Vec<String>> {
-        self.projection.get_all_tags().context("Failed to get tags")
+        tokio::task::block_in_place(|| {
+            self.doc
+                .blocking_lock()
+                .get_all_tags()
+                .context("Failed to get tags")
+        })
     }
 
     /// Get tags with usage counts
     pub fn get_tags_with_counts(&self) -> Result<Vec<(String, i64)>> {
-        self.projection
-            .get_tags_with_counts()
-            .context("Failed to get tag counts")
+        tokio::task::block_in_place(|| {
+            self.doc
+                .blocking_lock()
+                .get_tags_with_counts()
+                .context("Failed to get tag counts")
+        })
     }
 
     // ==================== Stats ====================
 
     /// Get count of links
     pub fn link_count(&self) -> Result<i64> {
-        self.projection
-            .link_count()
-            .context("Failed to count links")
+        tokio::task::block_in_place(|| {
+            self.doc
+                .blocking_lock()
+                .link_count()
+                .map(|c| c as i64)
+                .context("Failed to count links")
+        })
     }
 
     /// Get count of notes (across all links)
     pub fn note_count(&self) -> Result<i64> {
-        self.projection
-            .note_count()
-            .context("Failed to count notes")
+        tokio::task::block_in_place(|| {
+            self.doc
+                .blocking_lock()
+                .note_count()
+                .map(|c| c as i64)
+                .context("Failed to count notes")
+        })
     }
 
     // ==================== Advanced ====================
 
-    /// Save the document and update SQLite projection
+    /// Save the document to disk
     ///
     /// This first merges any external changes from disk (e.g., from CLI
     /// while TUI is running), then saves the merged document.
-    pub fn save_and_project(&mut self) -> Result<()> {
+    pub fn save(&mut self) -> Result<()> {
         tokio::task::block_in_place(|| {
             let mut doc = self.doc.blocking_lock();
 
@@ -399,22 +415,7 @@ impl Store {
             // Now save the merged document
             self.persistence
                 .save(&mut doc)
-                .context("Failed to save document")?;
-            self.projection
-                .project_full(&doc)
-                .context("Failed to project to SQLite")
-        })
-    }
-
-    /// Force a full rebuild of the SQLite projection
-    ///
-    /// Useful if SQLite gets out of sync or corrupted, or after sync updates.
-    pub fn rebuild_projection(&mut self) -> Result<()> {
-        tokio::task::block_in_place(|| {
-            let doc = self.doc.blocking_lock();
-            self.projection
-                .project_full(&doc)
-                .context("Failed to rebuild projection")
+                .context("Failed to save document")
         })
     }
 
@@ -480,7 +481,6 @@ mod tests {
         // Files should exist
         assert!(config.automerge_path().exists());
         assert!(config.root_doc_id_path().exists());
-        assert!(config.sqlite_path().exists());
     }
 
     #[test]
@@ -771,19 +771,6 @@ mod tests {
             assert_eq!(links[0].notes.len(), 1);
             assert_eq!(links[0].notes[0].body, "Persistent note");
         }
-    }
-
-    #[test]
-    fn test_rebuild_projection() {
-        let temp_dir = TempDir::new().unwrap();
-        let mut store = Store::open_with_config(test_config(&temp_dir)).unwrap();
-
-        store.add_link(&Link::new("https://example.com")).unwrap();
-        assert_eq!(store.link_count().unwrap(), 1);
-
-        // Rebuild should produce same result
-        store.rebuild_projection().unwrap();
-        assert_eq!(store.link_count().unwrap(), 1);
     }
 
     #[test]

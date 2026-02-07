@@ -67,10 +67,10 @@ pub async fn sync(store: &mut Store, config_path: Option<&PathBuf>, output: &Out
     let mut doc = shared_doc.lock().await;
     match client.sync_once(&mut doc).await {
         Ok(updated) => {
-            drop(doc); // Release lock before rebuilding projection
+            drop(doc); // Release lock before saving
             if updated {
-                // Rebuild projection after sync
-                store.rebuild_projection()?;
+                // Save the updated document to disk
+                store.save()?;
                 output.success("Sync complete - document updated");
 
                 // Show new counts
@@ -109,11 +109,11 @@ pub async fn sync_quiet(store: &mut Store, config: &Config) -> Result<()> {
     let shared_doc = store.shared_document();
     let mut doc = shared_doc.lock().await;
     let updated = client.sync_once(&mut doc).await?;
-    drop(doc); // Release lock before rebuilding projection
+    drop(doc); // Release lock before saving
 
     if updated {
-        // Rebuild projection after sync
-        store.rebuild_projection()?;
+        // Save the updated document to disk
+        store.save()?;
     }
 
     Ok(())
