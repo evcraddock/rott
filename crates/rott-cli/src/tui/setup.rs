@@ -335,7 +335,7 @@ impl SetupWizard {
                     .fg(Color::Cyan),
             )]),
             Line::from(""),
-            Line::from("Read Over The Top - Local-first link & note management"),
+            Line::from("Record of Tagged Topics - Local-first link & note management"),
         ])
         .alignment(ratatui::layout::Alignment::Center);
         frame.render_widget(title, chunks[0]);

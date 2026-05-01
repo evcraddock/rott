@@ -1,6 +1,6 @@
 //! ROTT Core Library
 //!
-//! This crate provides the core functionality for ROTT (Read Over The Top),
+//! This crate provides the core functionality for ROTT (Record of Tagged Topics),
 //! a local-first knowledge management system for links and notes.
 //!
 //! # Architecture

@@ -1,6 +1,6 @@
 # ROTT
 
-**R**ecord **O**f **T**agged **T**opics — A local-first links and notes manager with real-time sync.
+**R**ecord **o**f **T**agged **T**opics — A local-first links and notes manager with real-time sync.
 
 ## Overview
 
