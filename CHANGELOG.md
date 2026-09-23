@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.2] - 2026-09-23
+
+### Fixed
+- Prevented TUI crashes when truncating titles and URLs containing multibyte characters
+- Made truncation respect terminal display width when rendering Unicode text
+
+### Changed
+- Expanded ROTT as “Record of Tagged Topics” consistently in user-facing text and documentation
+
 ## [2.5.1] - 2026-02-07
 
 ### Fixed
@@ -126,7 +135,8 @@ Complete rewrite of ROTT as a local-first application with Automerge-based sync.
 | 2.0.1 | 2026-01-08 | Data loss prevention fix |
 | 2.0.0 | 2026-01-08 | Initial v2 release |
 
-[Unreleased]: https://github.com/evcraddock/rott/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/evcraddock/rott/compare/v2.5.2...HEAD
+[2.5.2]: https://github.com/evcraddock/rott/compare/v2.5.1...v2.5.2
 [2.3.0]: https://github.com/evcraddock/rott/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/evcraddock/rott/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/evcraddock/rott/compare/v2.1.0...v2.1.1
