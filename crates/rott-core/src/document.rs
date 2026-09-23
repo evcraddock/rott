@@ -493,7 +493,7 @@ impl RottDocument {
         }
 
         // Sort by created_at
-        notes.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+        notes.sort_by_key(|note| note.created_at);
         Ok(notes)
     }
 

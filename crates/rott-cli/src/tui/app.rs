@@ -410,7 +410,7 @@ impl App {
             }
             Some(Filter::Recent) => {
                 let mut links = store.get_all_links()?;
-                links.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+                links.sort_by_key(|link| std::cmp::Reverse(link.updated_at));
                 links
             }
             Some(Filter::Untagged) => {

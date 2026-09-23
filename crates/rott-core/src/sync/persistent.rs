@@ -390,7 +390,10 @@ where
 
         tokio::select! {
             msg = read.next() => {
-                let msg: Option<Result<Message, _>> = msg.map(|m| m.into());
+                let msg: Option<Result<Message, String>> = msg.map(|message| {
+                    let result: Result<Message, tokio_tungstenite::tungstenite::Error> = message.into();
+                    result.map_err(|error| error.to_string())
+                });
                 match msg {
                     Some(Ok(Message::Binary(data))) => {
                         match ServerMessage::decode(&data) {
