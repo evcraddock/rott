@@ -10,6 +10,34 @@ use ratatui::{
 
 use super::app::{ActivePane, App, Filter, InputMode, SyncIndicator};
 
+fn display_width(value: &str) -> usize {
+    Span::raw(value).width()
+}
+
+fn truncate_to_width(value: &str, max_width: usize) -> String {
+    if display_width(value) <= max_width {
+        return value.to_string();
+    }
+
+    const ELLIPSIS: &str = "…";
+    let ellipsis_width = display_width(ELLIPSIS);
+    if max_width < ellipsis_width {
+        return String::new();
+    }
+
+    let content_width = max_width - ellipsis_width;
+    let mut end = 0;
+    for (index, character) in value.char_indices() {
+        let candidate_end = index + character.len_utf8();
+        if display_width(&value[..candidate_end]) > content_width {
+            break;
+        }
+        end = candidate_end;
+    }
+
+    format!("{}{}", &value[..end], ELLIPSIS)
+}
+
 /// Main UI rendering function
 pub fn draw(frame: &mut Frame, app: &App) {
     // Create vertical layout for status bar at the bottom
@@ -122,21 +150,11 @@ fn draw_items_pane(frame: &mut Frame, app: &App, area: Rect) {
         .links
         .iter()
         .map(|link| {
-            // Truncate title if too long
-            let max_len = area.width.saturating_sub(4) as usize;
-            let title = if link.title.len() > max_len {
-                format!("{}…", &link.title[..max_len.saturating_sub(1)])
-            } else {
-                link.title.clone()
-            };
+            let max_width = area.width.saturating_sub(4) as usize;
+            let title = truncate_to_width(&link.title, max_width);
 
-            // Truncate URL
-            let url_max = max_len.saturating_sub(2);
-            let url = if link.url.len() > url_max {
-                format!("{}…", &link.url[..url_max.saturating_sub(1)])
-            } else {
-                link.url.clone()
-            };
+            let url_max_width = max_width.saturating_sub(2);
+            let url = truncate_to_width(&link.url, url_max_width);
 
             let content = Line::from(vec![Span::styled(title, Style::default())]);
 
@@ -577,4 +595,94 @@ fn draw_error_modal(frame: &mut Frame, error: &str) {
 
     let paragraph = Paragraph::new(lines).block(block).wrap(Wrap { trim: true });
     frame.render_widget(paragraph, popup_area);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::{backend::TestBackend, Terminal};
+    use rott_core::Link;
+
+    const REPORTED_TITLE: &str = "GitHub - geastack/examples: Example Gea applications and tools — the app gallery used by the simulator, the embedded targets, GeaOS and the Apple targets.";
+
+    #[test]
+    fn truncates_reported_title_at_utf8_boundaries() {
+        for width in 60..=68 {
+            let truncated = truncate_to_width(REPORTED_TITLE, width);
+
+            let prefix = truncated
+                .strip_suffix('…')
+                .expect("truncated title should end with an ellipsis");
+            assert!(REPORTED_TITLE.starts_with(prefix));
+            assert!(REPORTED_TITLE.is_char_boundary(prefix.len()));
+            assert!(display_width(&truncated) <= width);
+        }
+    }
+
+    #[test]
+    fn truncates_other_multibyte_characters_by_display_width() {
+        assert_eq!(truncate_to_width("éclair", 2), "é…");
+        assert_eq!(truncate_to_width("a界b", 3), "a…");
+        assert_eq!(truncate_to_width("🙂rust", 4), "🙂r…");
+        assert_eq!(truncate_to_width("a界b", 4), "a界b");
+    }
+
+    #[test]
+    fn handles_narrow_widths() {
+        assert_eq!(truncate_to_width("title", 0), "");
+        assert_eq!(truncate_to_width("title", 1), "…");
+        assert_eq!(truncate_to_width("", 0), "");
+    }
+
+    #[test]
+    fn renders_multibyte_titles_while_resizing() {
+        let app = app_with_title(REPORTED_TITLE);
+        let backend = TestBackend::new(200, 10);
+        let mut terminal = Terminal::new(backend).expect("test terminal should initialize");
+
+        for width in [200, 140, 80, 20, 5] {
+            terminal.backend_mut().resize(width, 10);
+            terminal.autoresize().expect("terminal should resize");
+            terminal
+                .draw(|frame| draw(frame, &app))
+                .expect("multibyte title should render");
+        }
+    }
+
+    fn app_with_title(title: &str) -> App {
+        let mut link = Link::new("https://example.com/路径/🙂");
+        link.set_title(title);
+        let links = vec![link];
+
+        App {
+            should_quit: false,
+            input_mode: InputMode::Normal,
+            command_type: None,
+            command_input: String::new(),
+            command_cursor: 0,
+            active_pane: ActivePane::Items,
+            filters: vec![Filter::Favorites],
+            filter_index: 0,
+            tags_expanded: false,
+            all_tags: Vec::new(),
+            all_links: links.clone(),
+            links,
+            link_index: 0,
+            status_message: None,
+            deleted_link: None,
+            filter_text: String::new(),
+            is_loading: false,
+            detail_scroll: 0,
+            status_message_time: None,
+            show_help: false,
+            sync_status: SyncIndicator::Disabled,
+            pending_g: None,
+            error_message: None,
+            show_device_panel: false,
+            device_info: super::super::app::DeviceInfo {
+                root_id: String::new(),
+                sync_url: None,
+            },
+        }
+    }
 }
