@@ -2,6 +2,8 @@
 
 [Specification index](README.md)
 
+> Amended September 26: [review decisions](review-decisions.md) take precedence over earlier wording below on unsaved content, incoming-copy removal, read tracking and boosts. Outstanding interactions are recorded there.
+
 ## Data ownership
 
 Automerge must store local personal data and support optional multi-device sync. Website publication and authoritative social state remain on the website; local communication history does not replace either website state or federation.

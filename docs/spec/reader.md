@@ -2,6 +2,8 @@
 
 [Specification index](README.md)
 
+> Amended September 26: [review decisions](review-decisions.md) take precedence over earlier wording below on unsaved content, incoming-copy removal, read tracking and boosts. Outstanding interactions are recorded there.
+
 ## Reading and navigation
 
 Opening ROTT must show locally available items without starting a website incoming-post download. Users must be able to browse cached content and the saved collection offline.
