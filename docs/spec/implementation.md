@@ -2,6 +2,8 @@
 
 [Specification index](README.md)
 
+> Amended September 26: [review decisions](review-decisions.md) take precedence over earlier wording below on unsaved content, incoming-copy removal, read tracking and boosts. Outstanding interactions are recorded there.
+
 This checklist preserves unresolved work without reopening accepted behavior. It does not create tasks or authorize implementation. Detailed contracts must be specified per feature using the [API gap review](../redesign/ROTT-API-GAP-REVIEW.md), rather than designing all endpoints upfront.
 
 ## API feature work and ownership
