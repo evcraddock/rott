@@ -2,7 +2,7 @@
 
 [Specification index](README.md)
 
-> Amended September 26: [review decisions](review-decisions.md) take precedence over earlier wording below on unsaved content, incoming-copy removal, read tracking and boosts. Outstanding interactions are recorded there.
+> The [September 26 review decisions](review-decisions.md) and [October 7 product decision register](reader-product-decisions.md) take precedence over conflicting earlier wording below. The October register governs the expressly resolved publishing, Like, acknowledgment, retention, conversation and learned-change policies; other accepted amendments remain intact.
 
 This checklist preserves unresolved work without reopening accepted behavior. It does not create tasks or authorize implementation. Detailed contracts must be specified per feature using the [API gap review](../redesign/ROTT-API-GAP-REVIEW.md), rather than designing all endpoints upfront.
 

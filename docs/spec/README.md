@@ -1,6 +1,6 @@
 # ROTT technical specification
 
-Status: design specification, September 25, 2026; amended by the September 26 review decisions. This set specifies the new application; it does not indicate implementation completion or authorize code changes, API mutations, task creation, or repository migration.
+Status: design specification, September 25, 2026; amended by the September 26 review decisions and October 7 reader product decisions. This set specifies the new application; it does not indicate implementation completion or authorize code changes, API mutations, task creation, or repository migration.
 
 ROTT combines a feed/account reader, a private saved collection, and durable personal communications. Users discover accounts, read locally available posts, download new website content explicitly, save links with tags and notes, and participate in supported social conversations. The product retains the ROTT name and local ownership of personal data.
 
@@ -12,6 +12,7 @@ SlugKit owns the shared website/API contract. **All new API additions and extens
 
 | Specification | Contents |
 | --- | --- |
+| [October 7 reader product decisions](reader-product-decisions.md) | Approved product policies, rationale, sources and affected implementation tasks |
 | [September 26 review decisions](review-decisions.md) | Authoritative amendments for feed storage, acknowledgments, bounded read tracking and boosts |
 | [Architecture and platforms](architecture.md) | Core boundaries, platform adapters, targets, coexistence |
 | [Site and API integration](site-integration.md) | Contract ownership, connection, credentials, identity, read-only doctor |
@@ -24,7 +25,7 @@ SlugKit owns the shared website/API contract. **All new API additions and extens
 
 “Must” and “must not” express accepted requirements. A section labeled proposed, implementation detail, deferred, or uncommitted does not establish a selected implementation. Required behavior whose API is missing remains a requirement, not an assertion that the deployed website supports it.
 
-The [September 26 review decisions](review-decisions.md) supersede conflicting earlier requirements in this set and its source documents. Earlier wording is retained for context pending consolidation.
+The [September 26 review decisions](review-decisions.md) supersede conflicting earlier requirements in this set and its source documents. The [October 7 product decision register](reader-product-decisions.md) supersedes conflicting earlier policy wording only for its explicitly approved decisions. Earlier wording is retained for context pending consolidation; unresolved labels in that earlier wording do not override recorded approvals.
 
 This is a separate technical presentation derived from the preserved [design document](../redesign/ROTT-DESIGN.md) and [reader overview](../redesign/ROTT-READER-OVERVIEW.md). Neither source is replaced or shortened by this set. Current verified methods/routes and source/deployment limits are centralized in the [API gap review](../redesign/ROTT-API-GAP-REVIEW.md); the specifications describe intended behavior.
 

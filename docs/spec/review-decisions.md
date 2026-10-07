@@ -2,6 +2,8 @@
 
 [Specification index](README.md)
 
+> The [October 7 reader product decision register](reader-product-decisions.md) resolves the remaining product questions and supersedes this review only where expressly stated. This September review remains the source for all other accepted amendments.
+
 These decisions amend the September 25 specification and take precedence where its storage, Download, read-state or backfill wording differs. The preserved redesign documents remain historical sources. This review authorizes documentation updates only.
 
 ## Feed delivery and saving
