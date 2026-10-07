@@ -2,6 +2,8 @@
 
 [Specification index](README.md)
 
+> The [September 26 review decisions](review-decisions.md) and [October 7 product decision register](reader-product-decisions.md) take precedence over conflicting earlier wording below. The October register governs the expressly resolved publishing, Like, acknowledgment, retention, conversation and learned-change policies; other accepted amendments remain intact.
+
 ## Data ownership
 
 Automerge must store local personal data and support optional multi-device sync. Website publication and authoritative social state remain on the website; local communication history does not replace either website state or federation.

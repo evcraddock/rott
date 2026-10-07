@@ -2,6 +2,8 @@
 
 [Specification index](README.md)
 
+> The [September 26 review decisions](review-decisions.md) and [October 7 product decision register](reader-product-decisions.md) take precedence over conflicting earlier wording below. The October register governs the expressly resolved publishing, Like, acknowledgment, retention, conversation and learned-change policies; other accepted amendments remain intact.
+
 ## Reading and navigation
 
 Opening ROTT must show locally available items without starting a website incoming-post download. Users must be able to browse cached content and the saved collection offline.
